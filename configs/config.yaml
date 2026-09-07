@@ -1,0 +1,19 @@
+experiment:
+name:"Multi-Horizon Multi-Head Drought Forecasting"
+seed:42
+
+data:
+sequence_length:6
+input_dimensions:12
+forecast_steps:4
+
+model:
+hidden_dim_1: 64
+hidden_dim_2:32
+dropout:0.2
+
+training:
+batch_size:32
+epochs:15
+learning_rate:0.001
+checkpoints_dir:"checkpoints"
