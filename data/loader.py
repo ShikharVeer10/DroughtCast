@@ -5,8 +5,14 @@ from data.preprocessing import ClimateNormalizer
 from data.dataset import DroughtResearchDataset
 
 def load_era_5_and_spei_data(inputs_nc_path:str,targets_nc_path:str,seq_len:int=6,forecast_steps:int=4):
-    ds_inputs=xr.open_dataset(inputs_nc_path)
-    ds_targets=xr.open_dataset(targets_nc_path)
+    import os
+    if not os.path.exists(inputs_nc_path):
+        raise FileNotFoundError(f"Input file not found: {inputs_nc_path}")
+    if not os.path.exists(targets_nc_path):
+        raise FileNotFoundError(f"Target file not found: {targets_nc_path}")
+
+    ds_inputs = xr.open_dataset(inputs_nc_path, engine='netcdf4')
+    ds_targets = xr.open_dataset(targets_nc_path, engine='netcdf4')
 
     #12 core climate and ocean variables exhibited from ERA5
     feature_vars=['u10','v10','t2m','msl','tp','evabs','strd','ssrd','swvl1','swvl2','ro','sst']

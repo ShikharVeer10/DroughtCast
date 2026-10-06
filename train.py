@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from models.forecaster import MultiHorizonMultiHeadForecaster
-from data.loader import load_era5_and_spei_data
+from data.loader import load_era_5_and_spei_data
 
 def main():
     with open("configs/config.yaml", "r") as f:
@@ -13,12 +13,12 @@ def main():
 
     os.makedirs(config['training']['checkpoint_dir'], exist_ok=True)
 
-    print(f"--- Initializing Training: {config['experiment']['name']} ---")
+    print(f" Initializing Training: {config['experiment']['name']} ")
     inputs_path = "data/era5_inputs.nc"
     targets_path = "data/spei_targets.nc"
     
     try:
-        dataset = load_era5_and_spei_data(
+        dataset = load_era_5_and_spei_data(
             inputs_nc_path=inputs_path,
             targets_nc_path=targets_path,
             seq_len=config['data']['seq_len'],

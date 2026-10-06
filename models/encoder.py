@@ -7,7 +7,7 @@ class SharedLSTMEncoder(nn.Module):
         super().__init__()
         #First LSTM layer capturing complex temporal patterns and dependencies
         self.lstm1=nn.LSTM(input_dim,hidden_dim_1,batch_first=True)
-        self.dropout=nn.dropout(dropout)
+        self.dropout=nn.Dropout(dropout)
         self.lstm2=nn.LSTM(hidden_dim_1,hidden_dim_2,batch_first=True)
     
     #Forward pass for the encoder where x(torch.Tensor) is the input tensor of shape [Batch. Seq_Len=6,Input_Dim=12]

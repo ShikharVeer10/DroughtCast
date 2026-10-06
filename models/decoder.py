@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-class ForcastDecoder(nn.Module):
+class ForecastDecoder(nn.Module):
 
     def __init__(self,input_dim=32,output_steps=4):
         super().__init__()

@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from torch.utils.data import DataLoader
 from models.forecaster import MultiHorizonMultiHeadForecaster
-from data.loader import load_era5_and_spei_data
+from data.loader import load_era_5_and_spei_data
 from utils.metrics import calculate_rmse, calculate_mae, calculate_nse, calculate_kge
 from evaluation.persistence import PersistenceBaseline
 
@@ -18,7 +18,7 @@ def evaluate_research_model():
     targets_path = "data/spei_targets.nc"
     
     try:
-        dataset = load_era5_and_spei_data(
+        dataset = load_era_5_and_spei_data(
             inputs_nc_path=inputs_path,
             targets_nc_path=targets_path,
             seq_len=config['data']['seq_len'],

@@ -7,7 +7,7 @@ plt.rcParams.update({
     'font.family': 'sans-serif',
     'font.size': 11,
     'axes.labelsize':12,
-    'axes.tiltsize':14,
+    'axes.titlesize':14,
     'xtick.labelsize':10,
     'ytick.labelsize':10,
     'figure.titlesize':16

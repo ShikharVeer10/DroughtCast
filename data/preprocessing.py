@@ -8,8 +8,8 @@ class ClimateNormalizer:
     
     #Calculates the average and the standard deviation from the 12 variables
     def fit(self, data: np.ndarray):
-        self.mean = np.mean(data, axis=(0, 1))#Computes mean and standard deviation across spatial and temporal axes
-        self.std = np.std(data, axis=(0, 1))
+        self.mean = np.mean(data, axis=0)  # Per-feature mean across the time axis
+        self.std = np.std(data, axis=0)    # Per-feature std across the time axis
         self.std[self.std==0.0] = 1.0 #Prevents division by zero if a feature has constant values
 
     #Standardizes the dataset using pre computed training mean and standard deviaton. Calculate the normanlized value =raw data-average/speed
