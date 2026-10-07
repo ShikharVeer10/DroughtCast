@@ -1,40 +1,22 @@
-"""
-DroughtCast Data Downloader
-
-Modes:
-  --synthetic   Generate synthetic NetCDF data for local development/testing
-                (no CDS API key required).
-  (default)     Download real ERA5 data from Copernicus Climate Data Store
-                (requires a valid ~/.cdsapirc configuration).
-
-Usage:
-  python download_data.py              # Download real data from CDS
-  python download_data.py --synthetic  # Generate synthetic data locally
-"""
-
 import os
 import sys
 import numpy as np
 
 os.makedirs("data", exist_ok=True)
-
-# All 12 ERA5 variables expected by the loader
 ERA5_VARIABLES = [
-    '10m_u_component_of_wind',       # u10
-    '10m_v_component_of_wind',       # v10
-    '2m_temperature',                # t2m
-    'mean_sea_level_pressure',       # msl
-    'total_precipitation',           # tp
-    'evaporation_from_bare_soil',    # evabs
-    'surface_thermal_radiation_downwards',  # strd
-    'surface_solar_radiation_downwards',    # ssrd
-    'volumetric_soil_water_layer_1', # swvl1
-    'volumetric_soil_water_layer_2', # swvl2
-    'runoff',                        # ro
-    'sea_surface_temperature',       # sst
+    '10m_u_component_of_wind',       
+    '10m_v_component_of_wind',       
+    '2m_temperature',               
+    'mean_sea_level_pressure',       
+    'total_precipitation',          
+    'evaporation_from_bare_soil',    
+    'surface_thermal_radiation_downwards',  
+    'surface_solar_radiation_downwards',    
+    'volumetric_soil_water_layer_1', 
+    'volumetric_soil_water_layer_2', 
+    'runoff',                        
+    'sea_surface_temperature',     
 ]
-
-# Short names used inside the NetCDF files (must match loader.py)
 ERA5_SHORT_NAMES = [
     'u10', 'v10', 't2m', 'msl', 'tp', 'evabs',
     'strd', 'ssrd', 'swvl1', 'swvl2', 'ro', 'sst'
@@ -42,7 +24,6 @@ ERA5_SHORT_NAMES = [
 
 
 def generate_synthetic_data(num_months: int = 60):
-    """Create synthetic ERA5 inputs and SPEI targets for development."""
     try:
         import xarray as xr
     except ImportError:
@@ -52,12 +33,9 @@ def generate_synthetic_data(num_months: int = 60):
     print(f"Generating synthetic data ({num_months} monthly time steps)...")
 
     rng = np.random.default_rng(seed=42)
-
-    # --- ERA5 Inputs ---
     time_coord = np.arange(num_months)
     data_vars = {}
     for var_name in ERA5_SHORT_NAMES:
-        # Smooth random walk to mimic monthly climate signals
         noise = rng.normal(0, 1, size=num_months).cumsum()
         noise = (noise - noise.mean()) / (noise.std() + 1e-8)
         data_vars[var_name] = ("time", noise.astype(np.float32))
@@ -66,8 +44,6 @@ def generate_synthetic_data(num_months: int = 60):
     ds_inputs.to_netcdf("data/era5_inputs.nc")
     print("  -> Saved data/era5_inputs.nc")
 
-    # --- SPEI Targets ---
-    # SPEI values are standardised indices, typically in [-3, 3]
     spei_3  = rng.normal(0, 1, size=num_months).astype(np.float32)
     spei_6  = rng.normal(0, 1, size=num_months).astype(np.float32)
     spei_12 = rng.normal(0, 1, size=num_months).astype(np.float32)
