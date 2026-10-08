@@ -4,7 +4,7 @@ experiment:
 
 data:
   seq_len: 6
-  input_dim: 12
+  input_dim: 5
   forecast_steps: 4
 
 model:

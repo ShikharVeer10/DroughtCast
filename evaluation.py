@@ -14,12 +14,12 @@ def evaluate_research_model():
 
     print(f"Evaluating Model: {config['experiment']['name']}")
 
-    inputs_path = "data/era5_inputs.nc"
+    inputs_path = "data/era5_inputs.csv"
     targets_path = "data/spei_targets.nc"
     
     try:
         dataset = load_era_5_and_spei_data(
-            inputs_nc_path=inputs_path,
+            inputs_csv_path=inputs_path,
             targets_nc_path=targets_path,
             seq_len=config['data']['seq_len'],
             forecast_steps=config['data']['forecast_steps']

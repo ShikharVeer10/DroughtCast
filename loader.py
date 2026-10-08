@@ -3,14 +3,35 @@ import pandas as pd
 import numpy as np
 import torch
 import xarray as xr
-from data.preprocessing import ClimateNormalizer
-from data.dataset import DroughtResearchDataset
+
+class ClimateNormalizer:
+    def __init__(self):
+        self.mean=None
+        self.std=None
+
+    def fit(self,data):
+        self.mean=np.mean(data,axis=0)
+        self.std=np.std(data,axis=0)
+        self.std[self.std==0.0]=1.0
+
+    def transform(self,data):
+        return (data-self.mean)/self.std
+
+class DroughtResearchDataset(torch.utils.data.Dataset):
+    def __init__(self,X,y3,y6,y12):
+        self.X=X
+        self.y3=y3
+        self.y6=y6
+        self.y12=y12
+
+    def __len__(self):
+        return len(self.X)
 
 def load_era_5_and_spei_data(inputs_csv_path: str, targets_nc_path: str, seq_len: int = 6, forecast_steps: int = 4):
     if not os.path.exists(inputs_csv_path):
-        raise FileNotFoundError(f"File not found: {inputs_csv_path}")
+        raise FileNotFoundError(f"Input file not found: {inputs_csv_path}")
     if not os.path.exists(targets_nc_path):
-        raise FileNotFoundError(f"File not found: {targets_nc_path}")
+        raise FileNotFoundError(f"Target file not found: {targets_nc_path}")
 
     df_inputs = pd.read_csv(inputs_csv_path)
     feature_vars = ['PRECTOTCORR', 'T2M', 'T2MDEW', 'WS10M', 'ALLSKY_SFC_SW_DWN']
@@ -26,12 +47,6 @@ def load_era_5_and_spei_data(inputs_csv_path: str, targets_nc_path: str, seq_len
     normalizer = ClimateNormalizer()
     normalizer.fit(input_arrays)
     normalized_inputs = normalizer.transform(input_arrays)
-    # Align input and target lengths (CSV may have more rows than NetCDF timesteps)
-    min_len = min(normalized_inputs.shape[0], len(spei_3_raw))
-    normalized_inputs = normalized_inputs[:min_len]
-    spei_3_raw = spei_3_raw[:min_len]
-    spei_6_raw = spei_6_raw[:min_len]
-    spei_12_raw = spei_12_raw[:min_len]
     num_time_steps = normalized_inputs.shape[0]
     X_windows, y3_windows, y6_windows, y12_windows = [], [], [], []
 
@@ -46,3 +61,4 @@ def load_era_5_and_spei_data(inputs_csv_path: str, targets_nc_path: str, seq_len
     y12_tensor = torch.tensor(np.array(y12_windows), dtype=torch.float32)
 
     return DroughtResearchDataset(X_tensor, y3_tensor, y6_tensor, y12_tensor)
+
