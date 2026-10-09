@@ -27,6 +27,10 @@ class DroughtResearchDataset(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.X)
 
+
+    def __getitem__(self,idx):
+        return self.X[idx], self.y3[idx], self.y6[idx], self.y12[idx]
+
 def load_era_5_and_spei_data(inputs_csv_path: str, targets_nc_path: str, seq_len: int = 6, forecast_steps: int = 4):
     if not os.path.exists(inputs_csv_path):
         raise FileNotFoundError(f"Input file not found: {inputs_csv_path}")
@@ -44,6 +48,11 @@ def load_era_5_and_spei_data(inputs_csv_path: str, targets_nc_path: str, seq_len
     spei_3_raw = np.nan_to_num(spei_3_raw, nan=0.0)
     spei_6_raw = np.nan_to_num(spei_6_raw, nan=0.0)
     spei_12_raw = np.nan_to_num(spei_12_raw, nan=0.0)
+
+    # 3. AUTOREGRESSIVE FEATURE ENGINEERING: Append lagged SPEI-3 as an input feature
+    spei_3_lagged = spei_3_raw.reshape(-1, 1)
+    augmented_inputs = np.concatenate([input_arrays, spei_3_lagged], axis=1)
+
     normalizer = ClimateNormalizer()
     normalizer.fit(input_arrays)
     normalized_inputs = normalizer.transform(input_arrays)

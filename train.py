@@ -45,13 +45,11 @@ def train_model():
 
             total_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(),max_norm=1.0)
-
             optimizer.step()
             epoch_loss+=total_loss.item()
-        
+    
         avg_loss=epoch_loss/len(dataloader)
         scheduler.step(avg_loss)
-
         print(f"Epoch [{epoch+1}/{num_epochs}] | Loss: {avg_loss:.4f}")
 
         if avg_loss<best_loss:
