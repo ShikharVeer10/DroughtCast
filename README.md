@@ -1,3 +1,7 @@
+
+
+
+
 # DroughtCast 🌦️
 
 **Multi-horizon drought forecasting with a shared LSTM encoder, temporal attention, and task-specific SPEI prediction heads.**
@@ -77,6 +81,9 @@ Context vector (weighted sequence summary)
         ▼              ▼              ▼
    4 predictions  4 predictions  4 predictions
 ```
+
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/b85e1c3d-25b1-4cb8-bebe-6ca6a77b7d71" />
+
 
 ### 1. Historical input window
 
