@@ -1,19 +1,42 @@
 experiment:
-  name: "Multi-Horizon Multi-Head Drought Forecasting"
+  name: "DroughtCast multi-scale SPEI forecasting"
   seed: 42
 
+sites:
+  guntur: {lat: 15.9129, lon: 79.74, region: south_asia}
+  jaipur: {lat: 26.9124, lon: 75.7873, region: south_asia}
+  nagpur: {lat: 21.1458, lon: 79.0882, region: south_asia}
+  murray_darling: {lat: -34.0, lon: 143.0, region: australia}
+  addis_ababa: {lat: 9.03, lon: 38.74, region: east_africa}
+  phoenix: {lat: 33.4484, lon: -112.074, region: us_southwest}
+  seville: {lat: 37.3891, lon: -5.9845, region: mediterranean}
+  pretoria: {lat: -25.7479, lon: 28.2293, region: southern_africa}
+
 data:
+  path: "data/monthly_sites.csv"
+  metadata_path: "data/meta.json"
+  start_year: 1981
+  end_year: 2024
+  features: [PRECTOTCORR, T2M, T2MDEW, WS10M, ALLSKY_SFC_SW_DWN, oni, dmi, nao, pdo, lag_spei_3, lag_spei_6, lag_spei_12]
   seq_len: 6
-  input_dim: 5
   forecast_steps: 4
+  # input_dim is inferred from features when loading the dataset.
 
 model:
+  encoder: lstm
+  attention: shared
+  variable_gate: false
+  quantiles: null
   hidden_dim_1: 64
   hidden_dim_2: 32
   dropout: 0.2
 
 training:
   batch_size: 32
-  epochs: 15
+  epochs: 100
   learning_rate: 0.001
-  checkpoint_dir: "checkpoints"
+  weight_decay: 0.0001
+  early_stopping_patience: 12
+  lr_patience: 5
+  extreme_weight: 1.0
+  checkpoint_dir: checkpoints

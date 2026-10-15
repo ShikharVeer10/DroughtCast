@@ -4,3 +4,10 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 *.swp
+data/raw/
+data/monthly_sites.csv
+data/meta.json
+data/dataset_metadata.json
+checkpoints/*.pt
+results/
+outputs/

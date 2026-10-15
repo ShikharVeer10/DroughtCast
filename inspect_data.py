@@ -1,16 +1,13 @@
-import xarray as xr
+"""Summarize a built monthly site table."""
+import argparse
+import pandas as pd
 
-files = ["era5_inputs.nc", "spei03.nc", "spei06.nc", "spei12.nc"]
-for file_path in files:
-    try:
-        ds = xr.open_dataset(file_path, engine='netcdf4')
-        print(f"Dataset: {file_path}")
-        print("Variables")
-        print(list(ds.data_vars))
-        print("\nDimensions")
-        print(dict(ds.dims))
-        print("\n Coordinates")
-        print(list(ds.coords))
-        ds.close()
-    except Exception as e:
-        print(f"Could not open {file_path}: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("path", nargs="?", default="data/monthly_sites.csv")
+    args = parser.parse_args()
+    frame = pd.read_csv(args.path, parse_dates=["date"])
+    print(frame.groupby("site").agg(first_date=("date", "min"), last_date=("date", "max"), months=("date", "size")))
+    print("month-13 rows:", int((frame.date.dt.month == 13).sum()))
+    print("target missingness:", frame[["spei_3", "spei_6", "spei_12"]].isna().mean().to_dict())

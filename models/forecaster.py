@@ -1,33 +1,94 @@
-from models.attention import TemporalAttention
+"""Joint multi-scale SPEI forecaster, with switchable encoder and attention."""
 import torch
 import torch.nn as nn
+
+from models.attention import TemporalAttention
 from models.encoder import SharedLSTMEncoder
 from models.decoder import ForecastDecoder
 
-class MultiHorizonMultiHeadForecaster(nn.Module):
-    def __init__(self,config):
+
+class MultiScaleForecaster(nn.Module):
+    def __init__(self, config):
         super().__init__()
-        self.encoder=SharedLSTMEncoder(
-            input_dim=config['data']['input_dim'],
-            hidden_dim_1=config['model']['hidden_dim_1'],
-            hidden_dim_2=config['model']['hidden_dim_2'],
-            dropout=config['model']['dropout']
-        )
+        data, model = config["data"], config["model"]
+        input_dim = data.get("input_dim")
+        if not input_dim:
+            raise ValueError("data.input_dim must be inferred from dataset feature columns")
+        hidden1, hidden2 = model.get("hidden_dim_1", 64), model.get("hidden_dim_2", 32)
+        encoder_type = model.get("encoder", "lstm").lower()
+        if encoder_type == "lstm":
+            self.encoder = SharedLSTMEncoder(input_dim, hidden1, hidden2, model.get("dropout", .2))
+        elif encoder_type == "gru":
+            self.encoder = nn.GRU(input_dim, hidden2, batch_first=True)
+        elif encoder_type == "transformer":
+            self.input_projection = nn.Linear(input_dim, hidden2)
+            layer = nn.TransformerEncoderLayer(hidden2, nhead=4, batch_first=True,
+                                               dropout=model.get("dropout", .2))
+            self.encoder = nn.TransformerEncoder(layer, num_layers=2)
+        else:
+            raise ValueError(f"Unknown encoder: {encoder_type}")
+        attention_mode = model.get("attention", "shared")
+        self.attention_mode = attention_mode
+        if attention_mode == "none":
+            self.attentions = None
+        elif attention_mode == "shared":
+            self.attentions = nn.ModuleList([TemporalAttention(hidden2)])
+        elif attention_mode == "head_specific":
+            self.attentions = nn.ModuleList([TemporalAttention(hidden2) for _ in range(3)])
+        else:
+            raise ValueError(f"Unknown attention mode: {attention_mode}")
+        self.variable_gate = nn.Sequential(nn.Linear(input_dim, input_dim), nn.Softmax(dim=-1)) if model.get("variable_gate", False) else None
+        self.decoders = nn.ModuleList([ForecastDecoder(hidden2, data["forecast_steps"]) for _ in range(3)])
+        self.quantiles = model.get("quantiles", None)
+        if self.quantiles:
+            q_count = len(self.quantiles)
+            # Monotone parameterization: median plus nonnegative distances to
+            # the lower/upper quantiles. This prevents crossing by construction.
+            if q_count != 3:
+                raise ValueError("Quantile mode currently requires exactly three quantiles (lower, median, upper)")
+            self.decoders = nn.ModuleList([nn.Sequential(nn.Linear(hidden2, 32), nn.ReLU(),
+                nn.Linear(32, data["forecast_steps"] * 3)) for _ in range(3)])
+            self.q_count = q_count
 
-        self.attention=TemporalAttention(hidden_dim=config['model']['hidden_dim_2']) #Temporal Attention and Context Vector
-        self.decoder_spei3 = ForecastDecoder(input_dim=config['model']['hidden_dim_2'], output_steps=config['data']['forecast_steps'])
-        self.decoder_spei6 = ForecastDecoder(input_dim=config['model']['hidden_dim_2'], output_steps=config['data']['forecast_steps'])
-        self.decoder_spei12 = ForecastDecoder(input_dim=config['model']['hidden_dim_2'], output_steps=config['data']['forecast_steps'])
+    def forward(self, x):
+        gate = None
+        if self.variable_gate is not None:
+            gate = self.variable_gate(x.mean(dim=1))
+            x = x * gate.unsqueeze(1)
+        if hasattr(self, "input_projection"):
+            x = self.input_projection(x)
+        encoded = self.encoder(x)
+        if isinstance(encoded, tuple):
+            encoded = encoded[0]
+        preds, attentions = {}, []
+        names = ("spei_3", "spei_6", "spei_12")
+        shared_context = shared_alpha = None
+        if self.attentions is not None and self.attention_mode == "shared":
+            shared_context, shared_alpha = self.attentions[0](encoded)
+        for i, (name, decoder) in enumerate(zip(names, self.decoders)):
+            if self.attentions is None:
+                context = encoded[:, -1]
+                alpha = torch.full((x.shape[0], x.shape[1], 1), 1 / x.shape[1], device=x.device)
+            elif self.attention_mode == "shared":
+                context, alpha = shared_context, shared_alpha
+            else:
+                attention = self.attentions[i]
+                context, alpha = attention(encoded)
+            raw = decoder(context)
+            if self.quantiles:
+                raw = raw.view(x.shape[0], 3, -1).transpose(1, 2)
+                median = raw[..., 1]
+                lower = median - torch.nn.functional.softplus(raw[..., 0])
+                upper = median + torch.nn.functional.softplus(raw[..., 2])
+                preds[name] = torch.stack((lower, median, upper), dim=-1)
+            else:
+                preds[name] = raw
+            attentions.append(alpha)
+        attention_output = (shared_alpha if self.attention_mode == "shared" else torch.stack(attentions, dim=1))
+        if self.attentions is None:
+            attention_output = torch.stack(attentions, dim=1)
+        return preds, {"attention": attention_output, "variable_gate": gate}
 
-    def forward(self,x):
-        #Completion of forward pass through the multi-head framework
 
-        encoder_out=self.encoder(x)
-        context_vector,alpha=self.attention(encoder_out)
-
-        prediction={
-            'spei_3':self.decoder_spei3(context_vector),
-            'spei_6':self.decoder_spei6(context_vector),
-            'spei_12':self.decoder_spei12(context_vector)
-        }
-        return prediction,alpha
+# Kept for compatibility with earlier checkpoints/scripts; new code should use MultiScaleForecaster.
+MultiHorizonMultiHeadForecaster = MultiScaleForecaster

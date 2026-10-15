@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+message: "If you use this software, cite the repository and the data providers documented in README.md. No archival DOI has been minted yet."
+title: "DroughtCast"
+type: software
+authors:
+  - family-names: "Veer"
+    given-names: "Shikhar"
+license: "NOASSERTION"

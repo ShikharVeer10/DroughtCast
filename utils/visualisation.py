@@ -45,7 +45,7 @@ def plot_temporal_attention_heatmaps(attention_weights: np.ndarray,sample_indice
     print(f"Attention heatmap successfully saved to {save_path}")
 
 
-def plot_multi_horizon_forecasts(predictions: np.ndarray, targets: np.ndarray, horizon_name: str = "SPEI-3", save_path: str = "outputs/forecast_comparison.png"):
+def plot_multi_scale_forecasts(predictions: np.ndarray, targets: np.ndarray, scale_name: str = "SPEI-3", save_path: str = "outputs/forecast_comparison.png"):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     
     fig, axes = plt.subplots(2, 2, figsize=(14, 10), sharey=True)
@@ -59,16 +59,16 @@ def plot_multi_horizon_forecasts(predictions: np.ndarray, targets: np.ndarray, h
         targ_step = targets[:, step_idx]
         
         ax.plot(targ_step, label="Observed (Ground Truth)", color="#2c3e50", linewidth=1.5, alpha=0.9)
-        ax.plot(pred_step, label=f"Predicted ({horizon_name})", color="#e74c3c", linestyle="--", linewidth=1.5, alpha=0.9)
+        ax.plot(pred_step, label=f"Predicted ({scale_name})", color="#e74c3c", linestyle="--", linewidth=1.5, alpha=0.9)
         
-        ax.set_title(f"Forecast Horizon: {step_labels[step_idx]}", fontweight='bold')
+        ax.set_title(f"Forecast Lead: {step_labels[step_idx]}", fontweight='bold')
         ax.set_xlabel("Time Index")
         ax.set_ylabel("SPEI Index Value")
         ax.grid(True, linestyle=":", alpha=0.6)
         ax.legend(loc="upper right", frameon=True)
         
-    fig.suptitle(f"Out-of-Sample Multi-Horizon Verification: {horizon_name}", fontsize=16, fontweight='bold', y=0.98)
+    fig.suptitle(f"Out-of-Sample Multi-Scale Verification: {scale_name}", fontsize=16, fontweight='bold', y=0.98)
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
     plt.close()
-    print(f"Forecast comparison plot for {horizon_name} saved to {save_path}")
+    print(f"Forecast comparison plot for {scale_name} saved to {save_path}")
