@@ -38,7 +38,8 @@ def _find_coord(ds, options):
     raise ValueError(f"Could not find coordinate matching {options}; available={list(ds.coords)}")
 
 
-def extract_reference(netcdf_path: Path, variable: str, scale: int) -> pd.DataFrame:
+def extract_reference(netcdf_path: Path, variable: str, scale: int,
+                     sites: dict | None = None) -> pd.DataFrame:
     ds = xr.open_dataset(netcdf_path)
     try:
         lat_name = _find_coord(ds, ("lat", "latitude"))
@@ -51,10 +52,12 @@ def extract_reference(netcdf_path: Path, variable: str, scale: int) -> pd.DataFr
                 raise ValueError(f"Specify --variable; matching data variables are {candidates}")
             variable = candidates[0]
         records = []
-        for site, location in SITES.items():
+        for site, location in (sites or SITES).items():
             point = ds[variable].sel({lat_name: location["lat"], lon_name: location["lon"]}, method="nearest")
             series = point.to_series()
-            dates = pd.to_datetime(series.index.get_level_values(time_name))
+            time_values = (series.index.get_level_values(time_name)
+                           if isinstance(series.index, pd.MultiIndex) else series.index)
+            dates = pd.to_datetime(time_values)
             values = np.asarray(series.values, dtype=float)
             fill = point.attrs.get("_FillValue", ds[variable].attrs.get("_FillValue"))
             if fill is not None:
@@ -67,13 +70,14 @@ def extract_reference(netcdf_path: Path, variable: str, scale: int) -> pd.DataFr
         ds.close()
 
 
-def compare_netcdf(computed: pd.DataFrame, directory: Path, variable: str | None = None) -> pd.DataFrame:
+def compare_netcdf(computed: pd.DataFrame, directory: Path, variable: str | None = None,
+                   sites: dict | None = None) -> pd.DataFrame:
     references = []
     for scale in (3, 6, 12):
         path = directory / f"spei{scale:02d}.nc"
         if not path.exists():
             raise FileNotFoundError(f"Expected SPEIbase file: {path}")
-        references.append(extract_reference(path, variable, scale))
+        references.append(extract_reference(path, variable, scale, sites))
     ref = references[0]
     for other in references[1:]:
         ref = ref.merge(other, on=["site", "date"], how="outer", validate="one_to_one")
@@ -85,11 +89,14 @@ if __name__ == "__main__":
     parser.add_argument("computed_csv")
     parser.add_argument("speibase", help="CSV with site/date/SPEI columns, or directory with spei03.nc/spei06.nc/spei12.nc")
     parser.add_argument("--variable", help="NetCDF SPEI variable name if it cannot be inferred")
+    parser.add_argument("--config", default="configs/config.yaml", help="Site coordinate configuration")
     args = parser.parse_args()
     computed = pd.read_csv(args.computed_csv, parse_dates=["date"])
     reference_path = Path(args.speibase)
     if reference_path.is_dir():
-        result = compare_netcdf(computed, reference_path, args.variable)
+        import yaml
+        cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+        result = compare_netcdf(computed, reference_path, args.variable, cfg.get("sites", SITES))
     else:
         result = compare(computed, pd.read_csv(reference_path, parse_dates=["date"]))
     print(result.to_string(index=False))

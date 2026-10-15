@@ -16,17 +16,26 @@ class MultiScaleForecaster(nn.Module):
             raise ValueError("data.input_dim must be inferred from dataset feature columns")
         hidden1, hidden2 = model.get("hidden_dim_1", 64), model.get("hidden_dim_2", 32)
         encoder_type = model.get("encoder", "lstm").lower()
-        if encoder_type == "lstm":
-            self.encoder = SharedLSTMEncoder(input_dim, hidden1, hidden2, model.get("dropout", .2))
-        elif encoder_type == "gru":
-            self.encoder = nn.GRU(input_dim, hidden2, batch_first=True)
-        elif encoder_type == "transformer":
+        if encoder_type not in ("lstm", "gru", "transformer"):
+            raise ValueError(f"Unknown encoder: {encoder_type}")
+        if encoder_type == "transformer":
             self.input_projection = nn.Linear(input_dim, hidden2)
+
+        def make_encoder():
+            if encoder_type == "lstm":
+                return SharedLSTMEncoder(input_dim if encoder_type != "transformer" else hidden2,
+                                         hidden1, hidden2, model.get("dropout", .2))
+            if encoder_type == "gru":
+                return nn.GRU(input_dim, hidden2, batch_first=True)
             layer = nn.TransformerEncoderLayer(hidden2, nhead=4, batch_first=True,
                                                dropout=model.get("dropout", .2))
-            self.encoder = nn.TransformerEncoder(layer, num_layers=2)
+            return nn.TransformerEncoder(layer, num_layers=2)
+
+        self.separate_encoders = bool(model.get("separate_encoders", False))
+        if self.separate_encoders:
+            self.encoders = nn.ModuleList([make_encoder() for _ in range(3)])
         else:
-            raise ValueError(f"Unknown encoder: {encoder_type}")
+            self.encoder = make_encoder()
         attention_mode = model.get("attention", "shared")
         self.attention_mode = attention_mode
         if attention_mode == "none":
@@ -46,6 +55,8 @@ class MultiScaleForecaster(nn.Module):
             # the lower/upper quantiles. This prevents crossing by construction.
             if q_count != 3:
                 raise ValueError("Quantile mode currently requires exactly three quantiles (lower, median, upper)")
+            if not (0 < self.quantiles[0] < self.quantiles[1] < self.quantiles[2] < 1) or self.quantiles[1] != 0.5:
+                raise ValueError("quantiles must be strictly increasing and have 0.5 as the median")
             self.decoders = nn.ModuleList([nn.Sequential(nn.Linear(hidden2, 32), nn.ReLU(),
                 nn.Linear(32, data["forecast_steps"] * 3)) for _ in range(3)])
             self.q_count = q_count
@@ -57,20 +68,26 @@ class MultiScaleForecaster(nn.Module):
             x = x * gate.unsqueeze(1)
         if hasattr(self, "input_projection"):
             x = self.input_projection(x)
-        encoded = self.encoder(x)
-        if isinstance(encoded, tuple):
-            encoded = encoded[0]
+        if self.separate_encoders:
+            encoded_list = [encoder(x) for encoder in self.encoders]
+        else:
+            encoded_list = [self.encoder(x)] * 3
+        encoded_list = [encoded[0] if isinstance(encoded, tuple) else encoded for encoded in encoded_list]
         preds, attentions = {}, []
         names = ("spei_3", "spei_6", "spei_12")
         shared_context = shared_alpha = None
-        if self.attentions is not None and self.attention_mode == "shared":
-            shared_context, shared_alpha = self.attentions[0](encoded)
+        if self.attentions is not None and self.attention_mode == "shared" and not self.separate_encoders:
+            shared_context, shared_alpha = self.attentions[0](encoded_list[0])
         for i, (name, decoder) in enumerate(zip(names, self.decoders)):
+            encoded = encoded_list[i]
             if self.attentions is None:
                 context = encoded[:, -1]
                 alpha = torch.full((x.shape[0], x.shape[1], 1), 1 / x.shape[1], device=x.device)
             elif self.attention_mode == "shared":
-                context, alpha = shared_context, shared_alpha
+                if self.separate_encoders:
+                    context, alpha = self.attentions[0](encoded)
+                else:
+                    context, alpha = shared_context, shared_alpha
             else:
                 attention = self.attentions[i]
                 context, alpha = attention(encoded)
@@ -84,7 +101,8 @@ class MultiScaleForecaster(nn.Module):
             else:
                 preds[name] = raw
             attentions.append(alpha)
-        attention_output = (shared_alpha if self.attention_mode == "shared" else torch.stack(attentions, dim=1))
+        attention_output = (shared_alpha if self.attention_mode == "shared" and not self.separate_encoders
+                            else torch.stack(attentions, dim=1))
         if self.attentions is None:
             attention_output = torch.stack(attentions, dim=1)
         return preds, {"attention": attention_output, "variable_gate": gate}

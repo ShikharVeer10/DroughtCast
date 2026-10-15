@@ -31,7 +31,8 @@ def split_for_date(date: pd.Timestamp) -> str | None:
 def load_site_table(path: str | Path, features: list[str] | None = None,
                     seq_len: int = 6, forecast_steps: int = 4,
                     metadata_path: str | Path | None = None,
-                    holdout_regions: list[str] | None = None) -> dict[str, DroughtResearchDataset]:
+                    holdout_regions: list[str] | None = None,
+                    site_filter: list[str] | None = None) -> dict[str, DroughtResearchDataset]:
     frame = pd.read_csv(path, parse_dates=["date"])
     required = {"date", "site", *TARGETS}
     missing = required.difference(frame.columns)
@@ -43,6 +44,11 @@ def load_site_table(path: str | Path, features: list[str] | None = None,
     if set(features).difference(frame.columns):
         raise ValueError(f"Missing configured features: {sorted(set(features).difference(frame.columns))}")
     frame = frame.sort_values(["site", "date"])
+    if site_filter:
+        unknown_sites = set(site_filter) - set(frame["site"].astype(str).unique())
+        if unknown_sites:
+            raise ValueError(f"Unknown configured site(s): {sorted(unknown_sites)}")
+        frame = frame[frame["site"].astype(str).isin(site_filter)].copy()
     holdout_regions = set(holdout_regions or [])
     unknown_regions = holdout_regions.difference(frame["region"].dropna().unique()) if "region" in frame else holdout_regions
     if unknown_regions:

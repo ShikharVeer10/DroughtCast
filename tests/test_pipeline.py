@@ -88,3 +88,13 @@ def test_model_quantile_shape_for_encoder_variants():
         model = MultiScaleForecaster(config)
         output, _ = model(torch.randn(2, 6, 5))
         assert all(output[k].shape == (2, 4, 3) for k in ("spei_3", "spei_6", "spei_12"))
+
+
+def test_model_separate_encoders_variant():
+    config = {"data": {"input_dim": 3, "forecast_steps": 2},
+              "model": {"encoder": "lstm", "separate_encoders": True,
+                        "attention": "shared", "hidden_dim_1": 4, "hidden_dim_2": 4}}
+    prediction, aux = MultiScaleForecaster(config)(torch.randn(2, 5, 3))
+    assert all(value.shape == (2, 2) for value in prediction.values())
+    assert aux["attention"].shape == (2, 3, 5, 1)
+    assert torch.allclose(aux["attention"].sum(dim=2), torch.ones(2, 3, 1), atol=1e-5)

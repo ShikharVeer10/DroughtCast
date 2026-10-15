@@ -22,10 +22,16 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-def masked_loss(prediction, target, mask, extreme_weight=1.0):
+def masked_loss(prediction, target, mask, extreme_weight=1.0, loss_kind="mse"):
     weights = torch.where(target <= -1.0, extreme_weight, 1.0)
     valid = mask.to(prediction.dtype) * weights
-    return (((prediction - target) ** 2) * valid).sum() / valid.sum().clamp_min(1)
+    if loss_kind == "huber":
+        point_loss = torch.nn.functional.huber_loss(prediction, target, reduction="none")
+    elif loss_kind in ("mse", "squared_error"):
+        point_loss = (prediction - target) ** 2
+    else:
+        raise ValueError(f"Unknown point loss: {loss_kind}")
+    return (point_loss * valid).sum() / valid.sum().clamp_min(1)
 
 
 def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0):
@@ -38,7 +44,7 @@ def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0):
 
 
 def epoch_loss(model, loader, optimizer=None, extreme_weight=1.0, quantiles=None,
-               task_weighting="fixed", task_log_vars=None):
+               task_weighting="fixed", task_log_vars=None, loss_kind="mse"):
     training = optimizer is not None
     model.train(training)
     total, count = 0.0, 0
@@ -52,7 +58,7 @@ def epoch_loss(model, loader, optimizer=None, extreme_weight=1.0, quantiles=None
                 if quantiles:
                     task_losses.append(pinball_loss(predictions[k], y[:, i], mask[:, i], quantiles, extreme_weight))
                 else:
-                    task_losses.append(masked_loss(predictions[k], y[:, i], mask[:, i], extreme_weight))
+                    task_losses.append(masked_loss(predictions[k], y[:, i], mask[:, i], extreme_weight, loss_kind))
             if task_weighting == "uncertainty":
                 loss = sum(torch.exp(-task_log_vars[i]) * value + task_log_vars[i]
                            for i, value in enumerate(task_losses))
@@ -80,7 +86,8 @@ def main():
     if not Path(cfg["data"]["path"]).exists():
         raise FileNotFoundError(f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first; synthetic fallback is disabled.")
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
-        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"), args.holdout_region)
+        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
+        args.holdout_region, cfg["data"].get("site_filter"))
     train, val = data["train"], data["val"]
     if not len(train) or not len(val):
         raise RuntimeError("Training and validation splits need real monthly observations through 2015")
@@ -101,9 +108,10 @@ def main():
     best, stale = float("inf"), 0
     for epoch in range(cfg["training"]["epochs"]):
         tr = epoch_loss(model, train_loader, opt, cfg["training"].get("extreme_weight", 1.0),
-                        quantiles, task_weighting, task_log_vars)
+                        quantiles, task_weighting, task_log_vars, cfg["training"].get("loss", "mse"))
         va = epoch_loss(model, val_loader, extreme_weight=cfg["training"].get("extreme_weight", 1.0),
-                        quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars)
+                        quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
+                        loss_kind=cfg["training"].get("loss", "mse"))
         scheduler.step(va)
         print(f"epoch={epoch+1} train_loss={tr:.6f} val_loss={va:.6f}")
         if va < best:

@@ -59,7 +59,8 @@ def main():
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
-        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"), args.holdout_region)
+        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
+        args.holdout_region, cfg["data"].get("site_filter"))
     train, test = data["train"], data["test"]
     if not len(test):
         raise RuntimeError("No valid test windows; data must cover 2017 onward")

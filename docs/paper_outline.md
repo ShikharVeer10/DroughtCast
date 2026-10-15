@@ -37,7 +37,7 @@ The shared encoder is LSTM(64), dropout, LSTM(32). The diagram-aligned default u
 c=\sum_{j=1}^{L}\alpha_jh_j.
 \]
 
-The same context (c) is supplied to the SPEI-3/6/12 decoders. Optional variable-gate, head-specific attention, GRU, and Transformer settings are ablations, not the main architecture. The reported baseline run uses point outputs and squared-error loss. An optional three-quantile head, pinball loss, and validation-only CQR evaluation are implemented, but no results from these options should be claimed until fresh multi-seed runs are completed.
+The same context (c) is supplied to the SPEI-3/6/12 decoders. Optional variable-gate, head-specific attention, separate-encoder, GRU, and Transformer settings are ablations, not the main architecture. The reported baseline run uses point outputs and squared-error loss. An optional three-quantile head, pinball loss, and validation-only CQR evaluation are implemented, but no results from these options should be claimed until fresh multi-seed runs are completed. Overlapping monthly windows induce dependence, so standard exchangeability-based conformal guarantees may not hold.
 
 ### 5. Protocol
 

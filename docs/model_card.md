@@ -22,4 +22,4 @@ See generated per-scale/per-lead tables in `results/summary.csv` and site-level 
 
 ## Limitations
 
-Only eight sites, one temporal holdout, approximate targets, no official target validation, and no calibrated probabilistic outputs. Do not deploy without domain validation and stronger independent evaluation.
+Only eight sites, one temporal holdout, approximate targets, and no official target validation. Quantile/CQR code is optional and has only smoke-level evaluation; do not describe it as validated calibration or deploy without domain validation and stronger independent evaluation.

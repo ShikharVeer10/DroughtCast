@@ -8,6 +8,7 @@ netcdf4==1.7.2
 matplotlib==3.9.2
 seaborn==0.13.2
 scikit-learn==1.5.2
+captum==0.7.0
 fastapi==0.115.5
 uvicorn[standard]==0.32.1
 python-multipart==0.0.20

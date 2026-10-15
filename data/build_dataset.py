@@ -229,7 +229,9 @@ def ingest_speibase(computed: pd.DataFrame, directory: Path, sites: dict[str, An
             for site, spec in sites.items():
                 point = ds[var_name].sel({lat_name: spec["lat"], lon_name: spec["lon"]}, method="nearest")
                 series = point.to_series()
-                time_index = pd.to_datetime(series.index.get_level_values(time_name))
+                time_values = (series.index.get_level_values(time_name)
+                               if isinstance(series.index, pd.MultiIndex) else series.index)
+                time_index = pd.to_datetime(time_values)
                 values = np.asarray(series.values, dtype=float)
                 fill = point.attrs.get("_FillValue", ds[var_name].attrs.get("_FillValue"))
                 if fill is not None:
