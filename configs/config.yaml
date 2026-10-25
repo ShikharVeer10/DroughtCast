@@ -23,13 +23,16 @@ data:
   # input_dim is inferred from features when loading the dataset.
 
 model:
-  encoder: lstm
-  attention: shared
-  variable_gate: false
-  quantiles: null
-  hidden_dim_1: 64
-  hidden_dim_2: 32
+  hidden_dim: 128
+  num_layers: 2
   dropout: 0.2
+  use_ocean_gate: true          
+  use_multi_horizon_attn: true  
+  use_cascaded_decoder: true    
+  predict_quantiles: true       
+
+
+
 
 training:
   batch_size: 32

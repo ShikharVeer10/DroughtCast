@@ -1,4 +1,4 @@
-"""Summarize a built monthly site table."""
+
 import argparse
 import pandas as pd
 
