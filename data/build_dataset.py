@@ -70,10 +70,8 @@ def fetch_power(site: str, spec: dict[str, Any], start: int, end: int, cache: Pa
 
 
 def _parse_noaa_text(name: str, text: str) -> pd.Series:
-    """Parse NOAA PSL annual row formats, failing on an empty/unknown layout."""
     rows: dict[pd.Timestamp, float] = {}
     if name == "oni":
-        # CPC ONI is season-labelled, so assign the central month of each season.
         season_month = {"DJF": 1, "JFM": 2, "FMA": 3, "MAM": 4, "AMJ": 5,
                         "MJJ": 6, "JJA": 7, "JAS": 8, "ASO": 9, "SON": 10,
                         "OND": 11, "NDJ": 12}

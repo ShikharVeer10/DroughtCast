@@ -1,8 +1,4 @@
-"""Run architecture-near ablations using the same frozen chronological protocol.
 
-Examples:
-  python -m experiments.run_ablations --seeds 11 22 33 44 55 --variants no_attention gru
-"""
 import argparse
 import copy
 import json

@@ -1,39 +1,96 @@
-"""Aggregate per-seed held-out metrics into machine-readable CSV summaries."""
+"""Summarize multi-seed evaluations with Mean +/- Standard Deviation and significance metrics."""
 import json
 import sys
 from pathlib import Path
-
+import numpy as np
 import pandas as pd
 
+SCALES = ["spei_3", "spei_6", "spei_12"]
+LEADS = ["T+1", "T+2", "T+3", "T+4"]
 
-def main(seeds):
-    rows = []
-    for seed in seeds:
-        path = Path(f"results/seeds/metrics_seed_{seed}.json")
-        report = json.loads(path.read_text(encoding="utf-8"))
-        for method, scales in report["methods"].items():
-            for scale, leads in scales.items():
-                for lead, metrics in leads.items():
-                    if not lead.startswith("T+"):
+
+def main():
+    seeds = sys.argv[1:] if len(sys.argv) > 1 else ["42", "101", "2024", "2025", "2026"]
+    results_dir = Path("results/seeds")
+    reports = []
+    for s in seeds:
+        p = results_dir / f"metrics_seed_{s}.json"
+        if p.exists():
+            reports.append((s, json.loads(p.read_text(encoding="utf-8"))))
+        else:
+            print(f"Warning: {p} not found")
+
+    if not reports:
+        print("No seed reports found.")
+        return
+
+    methods = list(reports[0][1]["methods"].keys())
+    records = []
+
+    for seed_str, rep in reports:
+        for m in methods:
+            if m not in rep["methods"]:
+                continue
+            for scale in SCALES:
+                if scale not in rep["methods"][m]:
+                    continue
+                for lead in LEADS:
+                    if lead not in rep["methods"][m][scale]:
                         continue
-                    rows.append({"seed": seed, "method": method, "scale": scale, "lead": lead, **metrics})
-    frame = pd.DataFrame(rows)
-    Path("results").mkdir(exist_ok=True)
-    frame.to_csv("results/per_seed.csv", index=False)
-    summary = frame.groupby(["method", "scale", "lead"], as_index=False).agg(
-        n_seeds=("seed", "nunique"), rmse_mean=("rmse", "mean"), rmse_std=("rmse", "std"),
-        mae_mean=("mae", "mean"), mae_std=("mae", "std"), nse_mean=("nse", "mean"),
-        nse_std=("nse", "std"), kge_mean=("kge_2012", "mean"), kge_std=("kge_2012", "std"),
-        skill_mean=("skill_vs_persistence", "mean"), skill_std=("skill_vs_persistence", "std"))
-    summary.to_csv("results/summary.csv", index=False)
-    paper_rows = summary[summary.method.isin(["droughtcast", "persistence", "ridge", "hist_gradient_boosting"])]
-    lines = ["| Method | Scale | Lead | RMSE mean ± std | Skill vs persistence |", "|---|---|---|---:|---:|"]
-    for row in paper_rows.itertuples(index=False):
-        skill = "—" if pd.isna(row.skill_mean) else f"{row.skill_mean:.3f} ± {row.skill_std:.3f}"
-        lines.append(f"| {row.method} | {row.scale.upper()} | {row.lead} | {row.rmse_mean:.3f} ± {row.rmse_std:.3f} | {skill} |")
-    Path("results/results_table.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print(summary.to_string(index=False))
+                    info = rep["methods"][m][scale][lead]
+                    row = {
+                        "seed": int(seed_str),
+                        "method": m,
+                        "scale": scale,
+                        "lead": lead,
+                        "rmse": info.get("rmse", np.nan),
+                        "mae": info.get("mae", np.nan),
+                        "nse": info.get("nse", np.nan),
+                        "kge_2012": info.get("kge_2012", np.nan),
+                        "skill_vs_persistence": info.get("skill_vs_persistence", np.nan),
+                        "csi_mod": info.get("drought_event_moderate", {}).get("csi", np.nan),
+                        "pod_mod": info.get("drought_event_moderate", {}).get("pod", np.nan),
+                        "far_mod": info.get("drought_event_moderate", {}).get("far", np.nan),
+                    }
+                    records.append(row)
+
+    df = pd.DataFrame(records)
+    out_dir = Path("results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_dir / "per_seed.csv", index=False)
+
+    # Compute Mean and Standard Deviation across seeds
+    summary_rows = []
+    grouped = df.groupby(["method", "scale", "lead"])
+    for (m, s, l), g in grouped:
+        summary_rows.append({
+            "method": m,
+            "scale": s,
+            "lead": l,
+            "n_seeds": len(g),
+            "rmse_mean": g["rmse"].mean(),
+            "rmse_std": g["rmse"].std(ddof=1) if len(g) > 1 else 0.0,
+            "mae_mean": g["mae"].mean(),
+            "mae_std": g["mae"].std(ddof=1) if len(g) > 1 else 0.0,
+            "nse_mean": g["nse"].mean(),
+            "nse_std": g["nse"].std(ddof=1) if len(g) > 1 else 0.0,
+            "kge_mean": g["kge_2012"].mean(),
+            "kge_std": g["kge_2012"].std(ddof=1) if len(g) > 1 else 0.0,
+            "skill_mean": g["skill_vs_persistence"].mean(),
+            "skill_std": g["skill_vs_persistence"].std(ddof=1) if len(g) > 1 else 0.0,
+            "csi_mean": g["csi_mod"].mean(),
+            "pod_mean": g["pod_mod"].mean(),
+            "far_mean": g["far_mod"].mean(),
+        })
+
+    summary_df = pd.DataFrame(summary_rows)
+    summary_df.to_csv(out_dir / "summary.csv", index=False)
+
+    print("\n================ MULTI-SEED BENCHMARK SUMMARY (MEAN +/- STD) ================")
+    pivot = summary_df.pivot(index=["scale", "lead"], columns="method", values=["rmse_mean", "kge_mean", "skill_mean"])
+    print(pivot.to_string())
+    print(f"\nSaved summary to {out_dir / 'summary.csv'} and {out_dir / 'per_seed.csv'}")
 
 
 if __name__ == "__main__":
-    main([int(x) for x in sys.argv[1:]])
+    main()

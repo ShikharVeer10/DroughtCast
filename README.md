@@ -55,6 +55,45 @@ A NASA API key was committed in the previous `fetch_data.py` and has been remove
 - IMD, ERA5-Land, CHIRPS, and TerraClimate alternative input mappings are not implemented or validated.
 - No data redistribution licence is asserted here; follow NASA POWER, NOAA, and any SPEIbase terms and cite providers.
 
-## Development
+## Development & Reproducibility Suite
 
-Run `python -m pytest -q` for the validation suite. To reproduce the five-seed temporal experiment from cached raw responses, run `python -m experiments.run_all --skip-build`; to rebuild the dataset first, omit `--skip-build`. This writes each seed checkpoint/report and generates `results/summary.csv`, `results/per_seed.csv`, and `results/results_table.md`. Run resumable architecture ablations with `python -m experiments.run_ablations --seeds 11 22 33 44 55`; add `--force` to rerun completed cells. Run the predeclared leave-one-region-out grid with `python -m experiments.run_region_holdouts --seeds 11 22 33 44 55`. Export attention and Integrated Gradients with `python -m experiments.export_interpretability --checkpoint CHECKPOINT`, then generate PNG/PDF figures using `python make_figures.py`. Figures and attributions describe model behavior and are not causal evidence. Generated raw data, checkpoints, metadata, and result artifacts are git-ignored.
+Run the full automated pytest suite:
+\\ash
+pytest -v
+\
+### Reproducing Multi-Seed Benchmarks (5 Independent Seeds)
+To execute the multi-seed experiment runner across the conference-standard random seeds \[42, 101, 2024, 2025, 2026]\:
+\\ash
+python -m experiments.run_all --skip-build
+\This writes per-seed model checkpoints and evaluation JSON reports, generating esults/summary.csv\ and esults/per_seed.csv\ reporting Mean +/- Standard Deviation across all hydrologic metrics.
+
+### Systematic 5-Row Ablation Study
+Run the isolated ablation suite quantifying exact metric degradation across components:
+\\ash
+python -m experiments.run_ablations --seeds 42 101 2024 2025 2026
+\This tests:
+1. o_teleconnections\: Ablation of macro-oceanic indices (ONI, DMI, NAO, PDO)
+2. o_attention\: Ablation of multi-horizon temporal attention
+3. o_cascading\: Ablation of physics-guided cascaded hydrological conditioning (SPEI-3 -> SPEI-6 -> SPEI-12)
+4. o_uncertainty_loss\: Ablation of Kendall homoscedastic uncertainty loss
+5. \ull_model\: Full DroughtCast architecture
+
+### Zero-Shot Spatial Cross-Validation (Region Holdouts)
+Test generalization across distinct agro-climatic zones:
+\\ash
+python -m experiments.run_region_holdouts --seeds 42 101 2024 2025 2026
+\
+### XAI Interpretability & Figure Generation
+Extract attention weights, permutation importances, and Integrated Gradients attributions:
+\\ash
+python -m experiments.export_interpretability --checkpoint checkpoints/best_research_model.pt
+\
+Compile 300 DPI vector figures (PDF, EPS, and PNG) adhering to IEEE/Springer styling guidelines:
+\\ash
+python make_figures.py
+\Outputs are saved directly to esults/figures/\:
+- \igure1_architecture_schematic.pdf\: End-to-end multi-horizon, multi-head schematic.
+- \igure2_spatiotemporal_tracking_bias.pdf\: 3x3 tracking and residual bias maps.
+- \igure3_hexbin_calibration.pdf\: Log-density hexbin joint calibration with extreme-tail quadrants.
+- \igure4_polar_taylor_and_decay.pdf\: Polar Taylor diagram and lead degradation curves.
+- \igure5_attention_heatmaps.pdf\: Cross-horizon memory allocation and seasonal attention dynamics.

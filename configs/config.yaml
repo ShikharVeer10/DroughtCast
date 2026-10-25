@@ -23,13 +23,17 @@ data:
   # input_dim is inferred from features when loading the dataset.
 
 model:
-  hidden_dim: 128
+  input_dim: 12                  # Phase 1: 12 climate & ocean variables (T-6 to T-1)
+  hidden_dim: 64                 # Phase 2: LSTM Layer 1 hidden units (64)
+  out_hidden_dim: 32             # Phase 2: LSTM Layer 2 hidden units (32) -> Context vector c in R^32
   num_layers: 2
   dropout: 0.2
-  use_ocean_gate: true          
-  use_multi_horizon_attn: true  
-  use_cascaded_decoder: true    
-  predict_quantiles: true       
+  spei3_dropout: 0.35            # Prevents SPEI-3 validation MAE divergence
+  forecast_steps: 1              # Set to 4 for simultaneous [T+1, T+2, T+3, T+4] output per head
+  num_quantiles: 1
+  use_teleconnection_gate: false # Ablation Toggle B
+  use_multi_horizon_attn: false  # Ablation Toggle C
+  use_cascade_decoder: false     # Ablation Toggle D 
 
 
 

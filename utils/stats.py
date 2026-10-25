@@ -1,5 +1,42 @@
-"""Paired uncertainty and Diebold-Mariano helpers for forecast comparisons."""
+"""Paired uncertainty, Diebold-Mariano, and Wilcoxon Signed-Rank tests for forecast comparisons."""
 import numpy as np
+from scipy import stats
+from typing import Dict, List, Optional, Tuple, Union
+
+
+def wilcoxon_signed_rank_test(
+    loss_model: Union[List[float], np.ndarray],
+    loss_baseline: Union[List[float], np.ndarray],
+    alternative: str = "less"
+) -> Dict[str, Union[float, int, bool]]:
+    """
+    Non-parametric Wilcoxon Signed-Rank Test on paired forecast error losses.
+    Testing H0: Median loss difference is zero vs H1: Model loss < Baseline loss ('less').
+    Returns test statistic, exact/asymptotic p-value, and significance flag (p < 0.01).
+    """
+    m = np.asarray(loss_model, dtype=float)
+    b = np.asarray(loss_baseline, dtype=float)
+    diff = m - b
+    valid = np.isfinite(diff) & (diff != 0.0)
+    d = diff[valid]
+    n = len(d)
+    if n < 5:
+        return {
+            "n": n,
+            "statistic": float("nan"),
+            "p_value": float("nan"),
+            "significant_01": False,
+            "significant_05": False
+        }
+    res = stats.wilcoxon(d, alternative=alternative)
+    return {
+        "n": n,
+        "statistic": float(res.statistic),
+        "p_value": float(res.pvalue),
+        "significant_01": bool(res.pvalue < 0.01),
+        "significant_05": bool(res.pvalue < 0.05),
+        "mean_diff": float(np.mean(diff[np.isfinite(diff)]))
+    }
 
 
 def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
@@ -21,7 +58,7 @@ def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
     statistic = d.mean() / np.sqrt(long_run / n)
     correction = np.sqrt(max((n + 1 - 2 * horizon + horizon * (horizon - 1) / n) / n, 0))
     statistic *= correction
-    # Normal approximation for the corrected statistic.
+    # Two-sided normal approximation
     from math import erf, sqrt
     p_value = 2 * (1 - 0.5 * (1 + erf(abs(statistic) / sqrt(2))))
     return {"n": n, "statistic": float(statistic), "p_value": float(p_value),

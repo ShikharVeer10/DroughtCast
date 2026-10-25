@@ -10,9 +10,8 @@ import yaml
 from data.loader import load_site_table
 from evaluation.baselines import fit_classical, persistence, seasonal_predictions
 from models.forecaster import MultiScaleForecaster
-from utils.metrics import (calculate_rmse, calculate_mae, calculate_nse,
-                           calculate_kge, drought_event_metrics)
-from utils.stats import dm_hac, paired_block_bootstrap_rmse_ci
+from utils.metrics import (calculate_rmse, calculate_mae, calculate_nse,calculate_kge, drought_event_metrics, skill_score_persistence)
+from utils.stats import dm_hac, paired_block_bootstrap_rmse_ci, wilcoxon_signed_rank_test
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 
@@ -27,9 +26,14 @@ def summarize_predictions(predictions, targets, mask, metadata):
             if not len(y):
                 continue
             results[name][f"T+{lead+1}"] = {
-                "n": int(len(y)), "rmse": calculate_rmse(p, y), "mae": calculate_mae(p, y),
-                "nse": calculate_nse(p, y), "kge_2012": calculate_kge(p, y),
-                "drought_event": drought_event_metrics(p, y),
+                "n": int(len(y)),
+                "rmse": calculate_rmse(p, y),
+                "mae": calculate_mae(p, y),
+                "nse": calculate_nse(p, y),
+                "kge_2012": calculate_kge(p, y),
+                "drought_event_moderate": drought_event_metrics(p, y, threshold=-1.0),
+                "drought_event_severe": drought_event_metrics(p, y, threshold=-1.5),
+                "drought_event_extreme": drought_event_metrics(p, y, threshold=-2.0),
             }
         per_site = {}
         site_ids = np.asarray([m["site"] for m in metadata])
@@ -40,9 +44,13 @@ def summarize_predictions(predictions, targets, mask, metadata):
                 valid = rows & mask[:, scale, lead] & np.isfinite(predictions[:, scale, lead])
                 y, p = targets[valid, scale, lead], predictions[valid, scale, lead]
                 if len(y):
-                    per_site[site][f"T+{lead+1}"] = {"n": int(len(y)),
-                        "rmse": calculate_rmse(p, y), "mae": calculate_mae(p, y),
-                        "nse": calculate_nse(p, y), "kge_2012": calculate_kge(p, y)}
+                    per_site[site][f"T+{lead+1}"] = {
+                        "n": int(len(y)),
+                        "rmse": calculate_rmse(p, y),
+                        "mae": calculate_mae(p, y),
+                        "nse": calculate_nse(p, y),
+                        "kge_2012": calculate_kge(p, y)
+                    }
         results[name]["by_site"] = per_site
     return results
 
@@ -54,7 +62,7 @@ def main():
     parser.add_argument("--output", default="results/test_metrics.json")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-classical", action="store_true")
-    parser.add_argument("--reuse-baseline-report", help="Reuse deterministic Ridge/HGB summaries from a completed evaluation JSON")
+    parser.add_argument("--reuse-baseline-report", help="Reuse deterministic summaries from a completed evaluation JSON")
     parser.add_argument("--holdout-region", action="append", default=[])
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -94,41 +102,58 @@ def main():
                 valid = mask_scale[:, lead]
                 before = interval_metrics(pred[valid, lead, 0], pred[valid, lead, 2], y[valid, lead])
                 after = interval_metrics(lower[valid, lead], upper[valid, lead], y[valid, lead])
-                metrics[f"T+{lead+1}"] = {"before": before, "after": after,
-                "calibration_quantile": calibrated[scale_name][lead],
-                    "crps_approx": crps_from_quantiles(pred[valid, lead:lead+1, :],
-                                                       y[valid, lead:lead+1], quantiles)}
+                metrics[f"T+{lead+1}"] = {
+                    "before": before,
+                    "after": after,
+                    "calibration_quantile": calibrated[scale_name][lead],
+                    "crps_approx": crps_from_quantiles(pred[valid, lead:lead+1, :], y[valid, lead:lead+1], quantiles)
+                }
             calibration_report["scales"][scale_name] = metrics
     targets, mask = test.Y.numpy(), test.mask.numpy()
     if quantiles:
         model_array = np.stack([model_prediction[k][:, :, 1].numpy() for k in SCALES], axis=1)
     else:
         model_array = np.stack([model_prediction[k].numpy() for k in SCALES], axis=1)
+
+    pers_preds = persistence(test.metadata, cfg["data"]["forecast_steps"])
+    climatology_preds = seasonal_predictions(train, test)
+
     baseline_predictions = {
-        "persistence": persistence(test.metadata, cfg["data"]["forecast_steps"]),
-        "seasonal_climatology": seasonal_predictions(train, test),
+        "persistence": pers_preds,
+        "climatology": climatology_preds,
+        "seasonal_climatology": climatology_preds,
     }
     cached_baseline_results = None
     if args.reuse_baseline_report:
         cached = json.loads(Path(args.reuse_baseline_report).read_text(encoding="utf-8"))
-        cached_baseline_results = {k: cached["methods"][k] for k in ("ridge", "hist_gradient_boosting")}
+        cached_baseline_results = {k: cached["methods"][k] for k in ("ridge", "hist_gradient_boosting", "xgboost", "var", "convlstm") if k in cached.get("methods", {})}
     if not args.skip_classical and cached_baseline_results is None:
         baseline_predictions["ridge"] = fit_classical(train, test, "ridge")
         baseline_predictions["hist_gradient_boosting"] = fit_classical(train, test, "hist_gradient_boosting")
+        baseline_predictions["xgboost"] = fit_classical(train, test, "xgboost")
+        baseline_predictions["var"] = fit_classical(train, test, "var")
+        baseline_predictions["convlstm"] = fit_classical(train, test, "convlstm")
+
     all_predictions = {"droughtcast": model_array, **baseline_predictions}
     results = {name: summarize_predictions(pred, targets, mask, test.metadata)
                for name, pred in all_predictions.items()}
     if cached_baseline_results is not None:
         results.update(cached_baseline_results)
-    # Add scale/lead skill against persistence to each method.
-    persistence_results = results["persistence"]
+
+    # Standard Hydrological Skill Score over Persistence (SS_pers = 1 - MSE_model / MSE_pers)
     for method, values in results.items():
         if method == "persistence":
             continue
-        for scale in SCALES:
-            for lead in (f"T+{i}" for i in range(1, cfg["data"]["forecast_steps"] + 1)):
-                if lead in values[scale] and lead in persistence_results[scale]:
-                    values[scale][lead]["skill_vs_persistence"] = 1 - values[scale][lead]["rmse"] / persistence_results[scale][lead]["rmse"]
+        for scale_idx, scale in enumerate(SCALES):
+            for lead_idx, lead in enumerate(f"T+{i}" for i in range(1, cfg["data"]["forecast_steps"] + 1)):
+                if lead in values[scale] and lead in results["persistence"][scale]:
+                    valid = mask[:, scale_idx, lead_idx]
+                    y_true = targets[valid, scale_idx, lead_idx]
+                    y_pred = all_predictions[method][valid, scale_idx, lead_idx]
+                    y_pers = pers_preds[valid, scale_idx, lead_idx]
+                    values[scale][lead]["skill_vs_persistence"] = skill_score_persistence(y_pred, y_true, y_pers)
+
+    # Statistical significance testing: DM-HAC and Non-parametric Wilcoxon Signed-Rank Tests
     inference = {}
     for scale, scale_name in enumerate(SCALES):
         inference[scale_name] = {}
@@ -136,13 +161,19 @@ def main():
             valid = mask[:, scale, lead]
             y = targets[valid, scale, lead]
             p = model_array[valid, scale, lead]
-            b = baseline_predictions["persistence"][valid, scale, lead]
+            b_pers = pers_preds[valid, scale, lead]
+            b_clim = climatology_preds[valid, scale, lead]
+
+            loss_droughtcast = (p - y) ** 2
+            loss_pers = (b_pers - y) ** 2
+            loss_clim = (b_clim - y) ** 2
+
             sample_meta = [m for i, m in enumerate(test.metadata) if valid[i]]
             group_ids = [f"{m['site']}:{m['target_dates'][lead][:4]}" for m in sample_meta]
-            # Aggregate each month's loss across sites first; HAC then models monthly
-            # serial dependence rather than treating pooled site windows as one series.
+
+            # Monthly panel loss aggregation for HAC
             monthly_rows = {}
-            for observed, predicted, base, meta in zip(y, p, b, sample_meta):
+            for observed, predicted, base, meta in zip(y, p, b_pers, sample_meta):
                 month = meta["target_dates"][lead][:7]
                 monthly_rows.setdefault(month, [[], []])
                 monthly_rows[month][0].append((predicted - observed) ** 2)
@@ -150,10 +181,14 @@ def main():
             month_keys = sorted(monthly_rows)
             model_month_losses = [np.mean(monthly_rows[k][0]) for k in month_keys]
             base_month_losses = [np.mean(monthly_rows[k][1]) for k in month_keys]
+
             inference[scale_name][f"T+{lead+1}"] = {
+                "wilcoxon_vs_persistence": wilcoxon_signed_rank_test(loss_droughtcast, loss_pers),
+                "wilcoxon_vs_climatology": wilcoxon_signed_rank_test(loss_droughtcast, loss_clim),
                 "dm_vs_persistence_squared_error_monthly_panel": dm_hac(model_month_losses, base_month_losses, horizon=lead+1),
-                "paired_block_bootstrap_vs_persistence": paired_block_bootstrap_rmse_ci(p, b, y, group_ids),
+                "paired_block_bootstrap_vs_persistence": paired_block_bootstrap_rmse_ci(p, b_pers, y, group_ids),
             }
+
     report = {"seed": args.seed, "checkpoint": args.checkpoint, "holdout_regions": args.holdout_region,
               "test_samples": len(test), "methods": results, "paired_inference": inference}
     if calibration_report is not None:
@@ -161,13 +196,7 @@ def main():
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, allow_nan=True), encoding="utf-8")
-    compact = {}
-    for method, scales in results.items():
-        compact[method] = {scale: {lead: {k: metrics.get(k) for k in ("n", "rmse", "mae", "nse", "kge_2012", "skill_vs_persistence")}
-                                  for lead, metrics in vals.items() if lead.startswith("T+")}
-                           for scale, vals in scales.items()}
-    print(json.dumps({"seed": args.seed, "test_samples": len(test), "summary": compact}, indent=2, allow_nan=True))
-    print(f"Saved metrics to {output}")
+    print(f"Saved evaluation metrics to {output}")
 
 
 if __name__ == "__main__":

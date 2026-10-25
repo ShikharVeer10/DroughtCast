@@ -1,10 +1,15 @@
 """Joint multi-scale SPEI forecaster, with switchable encoder and attention."""
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Union
+
 import torch
 import torch.nn as nn
 
-from models.attention import TemporalAttention
-from models.encoder import SharedLSTMEncoder
-from models.decoder import ForecastDecoder
+from models.attention import TemporalAttention, MultiHorizonTemporalAttention
+from models.encoder import SharedLSTMEncoder, TeleconnectionGatedEncoder
+from models.decoder import ForecastDecoder, MultiHorizonMultiHeadDecoder, CascadedHydrologicalDecoder
 
 
 class MultiScaleForecaster(nn.Module):
@@ -12,8 +17,11 @@ class MultiScaleForecaster(nn.Module):
         super().__init__()
         data, model = config["data"], config["model"]
         input_dim = data.get("input_dim")
+        if not input_dim and "features" in data:
+            input_dim = len(data["features"])
+            data["input_dim"] = input_dim
         if not input_dim:
-            raise ValueError("data.input_dim must be inferred from dataset feature columns")
+            raise ValueError("data.input_dim must be inferred from dataset feature columns or provided in config['data']['input_dim']")
         hidden1, hidden2 = model.get("hidden_dim_1", 64), model.get("hidden_dim_2", 32)
         encoder_type = model.get("encoder", "lstm").lower()
         if encoder_type not in ("lstm", "gru", "transformer"):
@@ -47,7 +55,24 @@ class MultiScaleForecaster(nn.Module):
         else:
             raise ValueError(f"Unknown attention mode: {attention_mode}")
         self.variable_gate = nn.Sequential(nn.Linear(input_dim, input_dim), nn.Softmax(dim=-1)) if model.get("variable_gate", False) else None
-        self.decoders = nn.ModuleList([ForecastDecoder(hidden2, data["forecast_steps"]) for _ in range(3)])
+        
+        # Check whether cascaded hydrological conditioning is configured
+        self.use_cascading = model.get("use_cascaded_decoder", False)
+        spei3_drop = model.get("spei3_dropout", 0.35 if self.use_cascading else model.get("dropout", 0.2))
+        
+        if self.use_cascading:
+            self.cascade_decoder = CascadedHydrologicalDecoder(
+                context_dim=hidden2,
+                forecast_steps=data["forecast_steps"],
+                hidden_dim=hidden1,
+                spei3_dropout=spei3_drop,
+                base_dropout=model.get("dropout", 0.2)
+            )
+            self.decoders = None
+        else:
+            self.cascade_decoder = None
+            self.decoders = nn.ModuleList([ForecastDecoder(hidden2, data["forecast_steps"], hidden_dim=hidden1, dropout=model.get("dropout", 0.2)) for _ in range(3)])
+
         self.quantiles = model.get("quantiles", None)
         if self.quantiles:
             q_count = len(self.quantiles)
@@ -60,6 +85,16 @@ class MultiScaleForecaster(nn.Module):
             self.decoders = nn.ModuleList([nn.Sequential(nn.Linear(hidden2, 32), nn.ReLU(),
                 nn.Linear(32, data["forecast_steps"] * 3)) for _ in range(3)])
             self.q_count = q_count
+
+    @classmethod
+    def from_config(cls, config: Union[dict, str, Path]) -> MultiScaleForecaster:
+        """Instantiate MultiScaleForecaster directly from a dictionary or YAML configuration file path."""
+        if isinstance(config, (str, Path)):
+            import yaml
+            cfg = yaml.safe_load(Path(config).read_text(encoding="utf-8"))
+        else:
+            cfg = config
+        return cls(cfg)
 
     def forward(self, x):
         gate = None
@@ -78,7 +113,9 @@ class MultiScaleForecaster(nn.Module):
         shared_context = shared_alpha = None
         if self.attentions is not None and self.attention_mode == "shared" and not self.separate_encoders:
             shared_context, shared_alpha = self.attentions[0](encoded_list[0])
-        for i, (name, decoder) in enumerate(zip(names, self.decoders)):
+
+        contexts = []
+        for i, name in enumerate(names):
             encoded = encoded_list[i]
             if self.attentions is None:
                 context = encoded[:, -1]
@@ -91,16 +128,28 @@ class MultiScaleForecaster(nn.Module):
             else:
                 attention = self.attentions[i]
                 context, alpha = attention(encoded)
-            raw = decoder(context)
-            if self.quantiles:
-                raw = raw.view(x.shape[0], 3, -1).transpose(1, 2)
-                median = raw[..., 1]
-                lower = median - torch.nn.functional.softplus(raw[..., 0])
-                upper = median + torch.nn.functional.softplus(raw[..., 2])
-                preds[name] = torch.stack((lower, median, upper), dim=-1)
-            else:
-                preds[name] = raw
+            contexts.append(context)
             attentions.append(alpha)
+
+        if self.cascade_decoder is not None and not self.quantiles:
+            c_stack = torch.stack(contexts, dim=1) # [B, 3, H]
+            p3, p6, p12 = self.cascade_decoder(c_stack)
+            preds["spei_3"] = p3
+            preds["spei_6"] = p6
+            preds["spei_12"] = p12
+        else:
+            for i, (name, decoder) in enumerate(zip(names, self.decoders)):
+                context = contexts[i]
+                raw = decoder(context)
+                if self.quantiles:
+                    raw = raw.view(x.shape[0], 3, -1).transpose(1, 2)
+                    median = raw[..., 1]
+                    lower = median - torch.nn.functional.softplus(raw[..., 0])
+                    upper = median + torch.nn.functional.softplus(raw[..., 2])
+                    preds[name] = torch.stack((lower, median, upper), dim=-1)
+                else:
+                    preds[name] = raw
+
         attention_output = (shared_alpha if self.attention_mode == "shared" and not self.separate_encoders
                             else torch.stack(attentions, dim=1))
         if self.attentions is None:

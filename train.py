@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from data.loader import load_site_table
 from models.forecaster import MultiScaleForecaster
+from models.model import UncertaintyWeightedMultiTaskLoss
 
 
 def seed_everything(seed: int):
@@ -22,8 +23,8 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-def masked_loss(prediction, target, mask, extreme_weight=1.0, loss_kind="mse"):
-    weights = torch.where(target <= -1.0, extreme_weight, 1.0)
+def masked_loss(prediction, target, mask, extreme_weight=1.0, extreme_threshold=-1.5, loss_kind="mse"):
+    weights = torch.where(target <= extreme_threshold, extreme_weight, 1.0)
     valid = mask.to(prediction.dtype) * weights
     if loss_kind == "huber":
         point_loss = torch.nn.functional.huber_loss(prediction, target, reduction="none")
@@ -31,20 +32,20 @@ def masked_loss(prediction, target, mask, extreme_weight=1.0, loss_kind="mse"):
         point_loss = (prediction - target) ** 2
     else:
         raise ValueError(f"Unknown point loss: {loss_kind}")
-    return (point_loss * valid).sum() / valid.sum().clamp_min(1)
+    return (point_loss * valid).sum() / valid.sum().clamp_min(1.0)
 
 
-def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0):
+def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0, extreme_threshold=-1.5):
     q = torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device).view(1, 1, -1)
     error = target.unsqueeze(-1) - prediction
     losses = torch.maximum(q * error, (q - 1.0) * error)
-    weights = torch.where(target <= -1.0, extreme_weight, 1.0).unsqueeze(-1)
+    weights = torch.where(target <= extreme_threshold, extreme_weight, 1.0).unsqueeze(-1)
     valid = mask.unsqueeze(-1).to(prediction.dtype) * weights
-    return (losses * valid).sum() / valid.sum().clamp_min(1)
+    return (losses * valid).sum() / valid.sum().clamp_min(1.0)
 
 
-def epoch_loss(model, loader, optimizer=None, extreme_weight=1.0, quantiles=None,
-               task_weighting="fixed", task_log_vars=None, loss_kind="mse"):
+def epoch_loss(model, loader, optimizer=None, extreme_weight=3.0, extreme_threshold=-1.5,
+               quantiles=None, task_weighting="uncertainty", task_log_vars=None, loss_kind="mse"):
     training = optimizer is not None
     model.train(training)
     total, count = 0.0, 0
@@ -56,10 +57,11 @@ def epoch_loss(model, loader, optimizer=None, extreme_weight=1.0, quantiles=None
             task_losses = []
             for i, k in enumerate(("spei_3", "spei_6", "spei_12")):
                 if quantiles:
-                    task_losses.append(pinball_loss(predictions[k], y[:, i], mask[:, i], quantiles, extreme_weight))
+                    task_losses.append(pinball_loss(predictions[k], y[:, i], mask[:, i], quantiles, extreme_weight, extreme_threshold))
                 else:
-                    task_losses.append(masked_loss(predictions[k], y[:, i], mask[:, i], extreme_weight, loss_kind))
-            if task_weighting == "uncertainty":
+                    task_losses.append(masked_loss(predictions[k], y[:, i], mask[:, i], extreme_weight, extreme_threshold, loss_kind))
+            if task_weighting == "uncertainty" and task_log_vars is not None:
+                # Kendall et al.: exp(-s_i) * L_i + s_i
                 loss = sum(torch.exp(-task_log_vars[i]) * value + task_log_vars[i]
                            for i, value in enumerate(task_losses))
             else:
@@ -84,7 +86,7 @@ def main():
     seed = args.seed if args.seed is not None else cfg["experiment"].get("seed", 42)
     seed_everything(seed)
     if not Path(cfg["data"]["path"]).exists():
-        raise FileNotFoundError(f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first; synthetic fallback is disabled.")
+        raise FileNotFoundError(f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first.")
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
         cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
         args.holdout_region, cfg["data"].get("site_filter"))
@@ -97,23 +99,30 @@ def main():
     val_loader = DataLoader(val, batch_size=cfg["training"]["batch_size"], shuffle=False)
     model = MultiScaleForecaster(cfg)
     quantiles = cfg["model"].get("quantiles")
-    task_weighting = cfg["training"].get("task_weighting", "fixed")
+    task_weighting = cfg["training"].get("task_weighting", "uncertainty")
     task_log_vars = torch.nn.Parameter(torch.zeros(3)) if task_weighting == "uncertainty" else None
-    opt = torch.optim.AdamW(model.parameters(), lr=cfg["training"]["learning_rate"], weight_decay=cfg["training"].get("weight_decay", 1e-4))
+    
+    params = list(model.parameters())
     if task_log_vars is not None:
-        opt.add_param_group({"params": [task_log_vars]})
+        params.append(task_log_vars)
+    opt = torch.optim.AdamW(params, lr=cfg["training"]["learning_rate"], weight_decay=cfg["training"].get("weight_decay", 1e-4))
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=cfg["training"].get("lr_patience", 5), factor=.5)
     checkpoint = Path(args.checkpoint) if args.checkpoint else Path(cfg["training"]["checkpoint_dir"]) / "best_research_model.pt"
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     best, stale = float("inf"), 0
+    ext_weight = cfg["training"].get("extreme_weight", 3.0)
+    ext_thresh = cfg["training"].get("extreme_threshold", -1.5)
+    loss_kind = cfg["training"].get("loss", "mse")
+
     for epoch in range(cfg["training"]["epochs"]):
-        tr = epoch_loss(model, train_loader, opt, cfg["training"].get("extreme_weight", 1.0),
-                        quantiles, task_weighting, task_log_vars, cfg["training"].get("loss", "mse"))
-        va = epoch_loss(model, val_loader, extreme_weight=cfg["training"].get("extreme_weight", 1.0),
+        tr = epoch_loss(model, train_loader, opt, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
+                        quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars, loss_kind=loss_kind)
+        va = epoch_loss(model, val_loader, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
                         quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
-                        loss_kind=cfg["training"].get("loss", "mse"))
+                        loss_kind=loss_kind)
         scheduler.step(va)
-        print(f"epoch={epoch+1} train_loss={tr:.6f} val_loss={va:.6f}")
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f"epoch={epoch+1:03d} train_loss={tr:.6f} val_loss={va:.6f}")
         if va < best:
             best, stale = va, 0
             state = {"model": model.state_dict(),
@@ -123,6 +132,7 @@ def main():
         else:
             stale += 1
         if stale >= cfg["training"].get("early_stopping_patience", 12):
+            print(f"Early stopping triggered at epoch {epoch+1}")
             break
 
 

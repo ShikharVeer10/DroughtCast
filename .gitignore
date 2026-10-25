@@ -1,13 +1,44 @@
-.venv/
+# Python Bytecode and Caches
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .pytest_cache/
+.coverage
+htmlcov/
+
+# Environments and Package Managers
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# System and Editor Artifacts
 .DS_Store
+Thumbs.db
 *.swp
+*.swo
+.vscode/
+.idea/
+
+# Large Model Checkpoints (Git LFS or Zenodo/HuggingFace managed)
+checkpoints/*.pt
+checkpoints/*.pth
+checkpoints/*.bin
+
+# Raw Climate Datasets & NetCDF Archives
 data/raw/
+*.nc
+*.nc4
+*.h5
+*.hdf5
 data/monthly_sites.csv
 data/meta.json
 data/dataset_metadata.json
-checkpoints/*.pt
+
+# Local Evaluation & Figure Run Artifacts
 results/
 outputs/
+*.log
