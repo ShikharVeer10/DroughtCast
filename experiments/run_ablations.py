@@ -10,7 +10,7 @@ import yaml
 
 
 BASE_FEATURES = ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN",
-                 "oni", "dmi", "nao", "pdo", "lag_spei_3", "lag_spei_6", "lag_spei_12"]
+                 "oni", "dmi", "nao", "pdo", "spei_3_obs", "spei_6_obs", "spei_12_obs"]
 VARIANTS = {
     "no_attention": {"model": {"attention": "none"}},
     "head_specific_attention": {"model": {"attention": "head_specific"}},
@@ -28,7 +28,7 @@ VARIANTS = {
     "window_12": {"data": {"seq_len": 12}},
     "window_24": {"data": {"seq_len": 24}},
     "without_indices": {"data": {"features": BASE_FEATURES[:5] + BASE_FEATURES[9:]}},
-    "without_lagged_spei": {"data": {"features": BASE_FEATURES[:9]}},
+    "without_observed_spei": {"data": {"features": BASE_FEATURES[:9]}},
     "climate_only": {"data": {"features": BASE_FEATURES[:5]}},
     "without_climate": {"data": {"features": BASE_FEATURES[5:]}},
     "single_site_guntur": {"data": {"site_filter": ["guntur"]}},

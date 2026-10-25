@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 
 from data.loader import load_site_table
 from models.forecaster import MultiScaleForecaster
-from models.model import UncertaintyWeightedMultiTaskLoss
 
 
 def seed_everything(seed: int):
@@ -44,35 +43,47 @@ def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0, extrem
     return (losses * valid).sum() / valid.sum().clamp_min(1.0)
 
 
+def unweighted_mse(prediction, target, mask):
+    """Plain masked MSE used for checkpoint selection (ignores task/extreme weights)."""
+    valid = mask.to(prediction.dtype)
+    return (((prediction - target) ** 2) * valid).sum() / valid.sum().clamp_min(1.0)
+
+
 def epoch_loss(model, loader, optimizer=None, extreme_weight=3.0, extreme_threshold=-1.5,
                quantiles=None, task_weighting="uncertainty", task_log_vars=None, loss_kind="mse"):
     training = optimizer is not None
     model.train(training)
-    total, count = 0.0, 0
+    total, total_mse, count = 0.0, 0.0, 0
     for x, y, mask, _ in loader:
         if training:
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(training):
             predictions, _ = model(x)
             task_losses = []
+            mse_losses = []
             for i, k in enumerate(("spei_3", "spei_6", "spei_12")):
                 if quantiles:
                     task_losses.append(pinball_loss(predictions[k], y[:, i], mask[:, i], quantiles, extreme_weight, extreme_threshold))
+                    median = predictions[k][..., quantiles.index(0.5)] if 0.5 in quantiles else predictions[k][..., len(quantiles) // 2]
+                    mse_losses.append(unweighted_mse(median, y[:, i], mask[:, i]))
                 else:
                     task_losses.append(masked_loss(predictions[k], y[:, i], mask[:, i], extreme_weight, extreme_threshold, loss_kind))
+                    mse_losses.append(unweighted_mse(predictions[k], y[:, i], mask[:, i]))
             if task_weighting == "uncertainty" and task_log_vars is not None:
                 # Kendall et al.: exp(-s_i) * L_i + s_i
                 loss = sum(torch.exp(-task_log_vars[i]) * value + task_log_vars[i]
                            for i, value in enumerate(task_losses))
             else:
                 loss = sum(task_losses)
+            selection_mse = sum(mse_losses)
             if training:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
         total += loss.item() * len(x)
+        total_mse += selection_mse.item() * len(x)
         count += len(x)
-    return total / max(count, 1)
+    return total / max(count, 1), total_mse / max(count, 1)
 
 
 def main():
@@ -101,7 +112,7 @@ def main():
     quantiles = cfg["model"].get("quantiles")
     task_weighting = cfg["training"].get("task_weighting", "uncertainty")
     task_log_vars = torch.nn.Parameter(torch.zeros(3)) if task_weighting == "uncertainty" else None
-    
+
     params = list(model.parameters())
     if task_log_vars is not None:
         params.append(task_log_vars)
@@ -115,19 +126,21 @@ def main():
     loss_kind = cfg["training"].get("loss", "mse")
 
     for epoch in range(cfg["training"]["epochs"]):
-        tr = epoch_loss(model, train_loader, opt, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
-                        quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars, loss_kind=loss_kind)
-        va = epoch_loss(model, val_loader, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
-                        quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
-                        loss_kind=loss_kind)
-        scheduler.step(va)
+        tr_loss, tr_mse = epoch_loss(model, train_loader, opt, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
+                                     quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars, loss_kind=loss_kind)
+        va_loss, va_mse = epoch_loss(model, val_loader, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
+                                     quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
+                                     loss_kind=loss_kind)
+        # Checkpoint on unweighted validation MSE; learned uncertainty weights change over epochs.
+        scheduler.step(va_mse)
         if (epoch + 1) % 10 == 0 or epoch == 0:
-            print(f"epoch={epoch+1:03d} train_loss={tr:.6f} val_loss={va:.6f}")
-        if va < best:
-            best, stale = va, 0
+            print(f"epoch={epoch+1:03d} train_loss={tr_loss:.6f} val_loss={va_loss:.6f} "
+                  f"train_mse={tr_mse:.6f} val_mse={va_mse:.6f}")
+        if va_mse < best:
+            best, stale = va_mse, 0
             state = {"model": model.state_dict(),
                      "task_log_vars": task_log_vars.detach().cpu() if task_log_vars is not None else None,
-                     "config": cfg, "seed": seed, "best_val_loss": best}
+                     "config": cfg, "seed": seed, "best_val_mse": best, "best_val_loss": va_loss}
             torch.save(state, checkpoint)
         else:
             stale += 1

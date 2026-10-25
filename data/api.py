@@ -83,7 +83,11 @@ def fetch_daily(site: str, spec: dict[str, Any], start: int, end: int) -> pd.Dat
 
 
 def pet_daily_aggregate(daily: pd.DataFrame, latitude: float) -> pd.DataFrame:
-    """Aggregate daily POWER data; calculate Hargreaves PET from daily extrema."""
+    """Aggregate daily POWER data; calculate Hargreaves PET from daily extrema.
+
+    ET0 (mm/day) = 0.0023 * (Tmean + 17.8) * sqrt(TR) * (Ra / 2.45), matching
+    data.build_dataset.estimate_pet_hargreaves.
+    """
     idx = daily.index
     tmean = daily["T2M"].astype(float)
     trange = (daily["T2M_MAX"].astype(float) - daily["T2M_MIN"].astype(float)).clip(lower=0)
@@ -92,9 +96,9 @@ def pet_daily_aggregate(daily: pd.DataFrame, latitude: float) -> pd.DataFrame:
     dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365.0)
     delta = 0.409 * np.sin(2 * np.pi * doy / 365.0 - 1.39)
     ws = np.arccos(np.clip(-np.tan(phi) * np.tan(delta), -1, 1))
-    ra = (24 * 60 / np.pi) * 0.0820 * dr * (
+    ra_extraterrestrial = (24 * 60 / np.pi) * 0.0820 * dr * (
         ws * np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.sin(ws))
-    et0 = 0.0023 * (tmean + 17.8) * np.sqrt(trange) * np.sqrt(np.maximum(ra, 0))
+    et0 = 0.0023 * (tmean + 17.8) * np.sqrt(trange) * (np.maximum(ra_extraterrestrial, 0) / 2.45)
     work = daily.copy()
     # Daily POWER PRECTOTCORR is mm/day; solar irradiance is an energy/day value.
     work["pet_mm"] = et0
@@ -136,6 +140,9 @@ def get_indices(start: str, end: str) -> pd.DataFrame:
 
 def standardize_spei_train_only(balance: pd.Series, scale: int, method: str) -> pd.Series:
     """Fit calendar-month empirical CDFs on data through 2010 only."""
+    from data.build_dataset import _nonparametric_z_scores
+    from statistics import NormalDist
+
     accumulation = balance.rolling(scale, min_periods=scale).sum()
     result = pd.Series(np.nan, index=balance.index, dtype=float)
     calibration_end = pd.Timestamp("2010-12-01")
@@ -146,11 +153,8 @@ def standardize_spei_train_only(balance: pd.Series, scale: int, method: str) -> 
         if len(calibration) < 20:
             continue
         if method == "nonparametric":
-            sorted_values = np.sort(calibration.to_numpy())
-            left = np.searchsorted(sorted_values, values.to_numpy(), side="left")
-            right = np.searchsorted(sorted_values, values.to_numpy(), side="right")
-            ranks = (left + right) / 2 + 1
-            probs = (ranks - 0.44) / (len(sorted_values) + 0.12)
+            z = _nonparametric_z_scores(values.to_numpy(dtype=float), calibration.to_numpy(dtype=float))
+            result.loc[values.index] = z
         else:
             sample = calibration.to_numpy(dtype=float)
             location = sample.min() - max(sample.std() * 1e-3, 1e-6)
@@ -159,8 +163,7 @@ def standardize_spei_train_only(balance: pd.Series, scale: int, method: str) -> 
             scale_parameter = np.exp(logs.mean())
             shifted = np.maximum(values.to_numpy() - location, 0.0)
             probs = 1.0 / (1.0 + np.maximum(shifted / scale_parameter, 1e-12) ** (-shape))
-        from statistics import NormalDist
-        result.loc[values.index] = pd.Series(np.clip(probs, 1e-6, 1 - 1e-6), index=values.index).map(NormalDist().inv_cdf)
+            result.loc[values.index] = pd.Series(np.clip(probs, 1e-6, 1 - 1e-6), index=values.index).map(NormalDist().inv_cdf)
     return result
 
 
@@ -171,11 +174,14 @@ def prepare_site(site: str, spec: dict[str, Any], daily: pd.DataFrame,
     balance = monthly["PRECTOTCORR"] - monthly["pet_mm"]
     for scale in (3, 6, 12):
         monthly[f"spei_{scale}"] = standardize_spei_train_only(balance, scale, method)
-        monthly[f"lag_spei_{scale}"] = monthly[f"spei_{scale}"].shift(1)
+        monthly[f"spei_{scale}_obs"] = monthly[f"spei_{scale}"]
     for variable in PARAMETERS:
         if variable in monthly:
             monthly[f"lag_{variable}"] = monthly[variable].shift(1)
     monthly = monthly.join(indices, how="left")
+    # 3-month centered ONI at month m contains m+1; use the value centered on m-1.
+    if "oni" in monthly.columns:
+        monthly["oni"] = monthly["oni"].shift(1)
     monthly["site"], monthly["region"] = site, spec["region"]
     monthly.index.name = "date"
     return monthly.reset_index()
@@ -215,7 +221,7 @@ def build(request: BuildRequest):
         tables.append(prepare_site(site, SITES[site], daily, indices, request.spei_method))
     output = pd.concat(tables, ignore_index=True)
     output = output[(pd.to_datetime(output["date"]) >= start_date) & (pd.to_datetime(output["date"]) <= end_date)]
-    required_features = {"PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN", "oni", "dmi", "nao", "pdo", "lag_spei_3", "lag_spei_6", "lag_spei_12"}
+    required_features = {"PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN", "oni", "dmi", "nao", "pdo", "spei_3_obs", "spei_6_obs", "spei_12_obs"}
     missing_features = required_features.difference(output.columns)
     if missing_features:
         raise HTTPException(status_code=500, detail=f"Prepared data missing training features: {sorted(missing_features)}")

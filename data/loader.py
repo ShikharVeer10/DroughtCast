@@ -14,7 +14,7 @@ from data.preprocessing import ClimateNormalizer
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
 DEFAULT_FEATURES = ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN",
-                   "oni", "dmi", "nao", "pdo", "lag_spei_3", "lag_spei_6", "lag_spei_12"]
+                   "oni", "dmi", "nao", "pdo", "spei_3_obs", "spei_6_obs", "spei_12_obs"]
 
 
 def split_for_date(date: pd.Timestamp) -> str | None:

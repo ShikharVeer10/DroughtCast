@@ -1,21 +1,21 @@
-"""Publication-grade visualisations adhering to IEEE / Springer manuscript specifications.
-Generates 300 DPI vector PDF and high-res PNG plots for Figures 1 through 5.
+"""Publication-grade visualisations from real evaluation artefacts.
+
+Every figure reads files under results/ and fails loudly if they are missing.
+No figure input is synthesised with np.random.
 """
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
 import pandas as pd
-import seaborn as sns
-from scipy.stats import pearsonr
 
 from utils.visualisation import plot_hexbin_extreme_calibration, plot_multihorizon_seasonal_attention
 
-# IEEE / Springer formatting guidelines
 plt.rcParams.update({
     "font.family": "serif",
     "font.size": 10,
@@ -39,9 +39,46 @@ PALETTE = {
     "hist_gradient_boosting": "#D55E00",
     "xgboost": "#882255",
     "var": "#44AA99",
-    "convlstm": "#AA4499"
+    "gru": "#AA4499",
+    "tcn": "#332288",
 }
 SCALES = ["spei_3", "spei_6", "spei_12"]
+SITE_COORDS = {
+    "guntur": (79.74, 15.91),
+    "jaipur": (75.78, 26.91),
+    "nagpur": (79.08, 21.14),
+    "murray_darling": (143.0, -34.0),
+    "addis_ababa": (38.74, 9.03),
+    "phoenix": (-112.07, 33.44),
+    "seville": (-5.98, 37.38),
+    "pretoria": (28.22, -25.74),
+}
+
+
+def require_file(path: Path) -> Path:
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Required results artefact missing: {path}. "
+            "Run training/evaluation (or the interpretability export) before make_figures."
+        )
+    return path
+
+
+def load_metrics(path: Path | None = None) -> dict:
+    candidates = [
+        path,
+        Path("results/test_metrics.json"),
+        Path("results/test_metrics_seed42.json"),
+    ]
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if candidate.is_file():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    raise FileNotFoundError(
+        "No evaluation metrics found under results/test_metrics.json or "
+        "results/test_metrics_seed42.json. Run evaluate.py first."
+    )
 
 
 def save_fig(fig, out_folder: Path, stem: str):
@@ -52,193 +89,224 @@ def save_fig(fig, out_folder: Path, stem: str):
     plt.close(fig)
 
 
-def generate_figure1_architecture(out_dir: Path):
-    """Figure 1: End-to-end architecture schematic (Phases 1-6)."""
+def generate_figure1_architecture(out_dir: Path, config_path: Path | None = None):
+    """Figure 1: architecture schematic. Prefer config-driven generation when available."""
+    config_path = config_path or Path("configs/base_diagram.yaml")
+    if config_path.is_file():
+        import yaml
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        m = cfg.get("model", {})
+        h1 = m.get("hidden_dim_1", 64)
+        h2 = m.get("hidden_dim_2", 32)
+        drop = m.get("dropout", 0.2)
+        encoder_label = f"LSTM({h1}) -> Drop({drop}) -> LSTM({h2})"
+    else:
+        encoder_label = "LSTM(64) -> Drop(0.2) -> LSTM(32)"
+
     fig, ax = plt.subplots(figsize=(12, 5.5))
-    ax.axis('off')
-
-    # Draw Phase blocks
+    ax.axis("off")
     phases = [
-        ("Phase 1: Input Tensor\n[B, T=6, D=12]\nClimate + Oceans", 0.03, 0.45, 0.14, 0.35, "#E8F0FE", "#1A73E8"),
-        ("Phase 2: Shared Encoder\nPyramidal LSTM\nLSTM(64) -> Drop -> LSTM(32)", 0.21, 0.45, 0.16, 0.35, "#E6F4EA", "#137333"),
-        ("Phase 3: Temporal Attention\nQuery Projection\nSoftmax over T=6 lags", 0.41, 0.45, 0.15, 0.35, "#FEF7E0", "#F9AB00"),
-        ("Phase 4: Global Context\nContext Vector c in R^32\nLatent Spatiotemporal State", 0.60, 0.45, 0.15, 0.35, "#FCE8E6", "#C5221F"),
+        ("Phase 1: Input Tensor\n[B, T=6, D=12]\n12 climate, ocean and\ndrought-state variables",
+         0.03, 0.45, 0.14, 0.35, "#E8F0FE", "#1A73E8"),
+        (f"Phase 2: Shared Encoder\nPyramidal LSTM\n{encoder_label}",
+         0.21, 0.45, 0.16, 0.35, "#E6F4EA", "#137333"),
+        ("Phase 3: Temporal Attention\nscore = v^T tanh(W h_t)\nSoftmax over T=6",
+         0.41, 0.45, 0.15, 0.35, "#FEF7E0", "#F9AB00"),
+        ("Phase 4: Shared Context\nContext vector c in R^32\nSame c for all heads",
+         0.60, 0.45, 0.15, 0.35, "#FCE8E6", "#C5221F"),
     ]
-
     for title, x, y, w, h, bg, border in phases:
-        rect = patches.FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02",fc=bg, ec=border, lw=2, transform=ax.transAxes)
+        rect = patches.FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02",
+                                      fc=bg, ec=border, lw=2, transform=ax.transAxes)
         ax.add_patch(rect)
-        ax.text(x + w/2, y + h/2, title, ha='center', va='center',fontsize=9.5, fontweight='bold', transform=ax.transAxes)
+        ax.text(x + w / 2, y + h / 2, title, ha="center", va="center",
+                fontsize=9, fontweight="bold", transform=ax.transAxes)
 
-    # Phase 5 & 6: Cascaded Multi-Head Decoders
     heads = [
-        ("SPEI-3 Head (Agri)\nDecoupled Dropout (p=0.35)\nOutputs T+1..T+4", 0.80, 0.70, "#E8EAED", "#5F6368"),
-        ("SPEI-6 Head (Hydro)\nCascaded Conditioning\nOutputs T+1..T+4", 0.80, 0.45, "#E8EAED", "#5F6368"),
-        ("SPEI-12 Head (Groundwater)\nLong-term Persistence\nOutputs T+1..T+4", 0.80, 0.20, "#E8EAED", "#5F6368"),
+        ("SPEI-3 accumulation\nscale head\nT+1..T+4", 0.80, 0.70),
+        ("SPEI-6 accumulation\nscale head\nT+1..T+4", 0.80, 0.45),
+        ("SPEI-12 accumulation\nscale head\nT+1..T+4", 0.80, 0.20),
     ]
-
-    for title, x, y, bg, border in heads:
-        rect = patches.FancyBboxPatch((x, y), 0.18, 0.20, boxstyle="round,pad=0.015",fc=bg, ec=border, lw=1.8, transform=ax.transAxes)
+    for title, x, y in heads:
+        rect = patches.FancyBboxPatch((x, y), 0.18, 0.20, boxstyle="round,pad=0.015",
+                                      fc="#E8EAED", ec="#5F6368", lw=1.8, transform=ax.transAxes)
         ax.add_patch(rect)
-        ax.text(x + 0.09, y + 0.10, title, ha='center', va='center',fontsize=8.5, fontweight='bold', transform=ax.transAxes)
+        ax.text(x + 0.09, y + 0.10, title, ha="center", va="center",
+                fontsize=8.5, fontweight="bold", transform=ax.transAxes)
 
-    # Connecting arrows
-    ax.annotate('', xy=(0.21, 0.625), xytext=(0.17, 0.625), xycoords='axes fraction', arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=6))
-    ax.annotate('', xy=(0.41, 0.625), xytext=(0.37, 0.625), xycoords='axes fraction',arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=6))
-    ax.annotate('', xy=(0.60, 0.625), xytext=(0.56, 0.625), xycoords='axes fraction',arrowprops=dict(facecolor='black', shrink=0.05, width=1.5, headwidth=6))
+    for x0, x1 in ((0.17, 0.21), (0.37, 0.41), (0.56, 0.60)):
+        ax.annotate("", xy=(x1, 0.625), xytext=(x0, 0.625), xycoords="axes fraction",
+                    arrowprops=dict(facecolor="black", shrink=0.05, width=1.5, headwidth=6))
+    for y in (0.80, 0.55, 0.30):
+        ax.annotate("", xy=(0.80, y), xytext=(0.75, 0.625), xycoords="axes fraction",
+                    arrowprops=dict(facecolor="#1A73E8", shrink=0.05, width=1.5, headwidth=6))
 
-    # Context to Heads
-    ax.annotate('', xy=(0.80, 0.80), xytext=(0.75, 0.625), xycoords='axes fraction',arrowprops=dict(facecolor='#1A73E8', shrink=0.05, width=1.5, headwidth=6))
-    ax.annotate('', xy=(0.80, 0.55), xytext=(0.75, 0.625), xycoords='axes fraction',arrowprops=dict(facecolor='#1A73E8', shrink=0.05, width=1.5, headwidth=6))
-    ax.annotate('', xy=(0.80, 0.30), xytext=(0.75, 0.625), xycoords='axes fraction',arrowprops=dict(facecolor='#1A73E8', shrink=0.05, width=1.5, headwidth=6))
-
-    # Cascading arrows
-    ax.annotate('', xy=(0.89, 0.65), xytext=(0.89, 0.70), xycoords='axes fraction',arrowprops=dict(facecolor='#D93025', shrink=0.05, width=1.2, headwidth=5))
-    ax.annotate('', xy=(0.89, 0.40), xytext=(0.89, 0.45), xycoords='axes fraction',arrowprops=dict(facecolor='#D93025', shrink=0.05, width=1.2, headwidth=5))
-
-    ax.text(0.5, 0.95, "Figure 1: DroughtCast Multi-Scale Hydrological Forecasting Architecture",ha='center', va='center', fontsize=12, fontweight='bold', transform=ax.transAxes)
+    ax.text(0.5, 0.95, "Figure 1: DroughtCast Multi-Scale SPEI Forecasting Architecture",
+            ha="center", va="center", fontsize=12, fontweight="bold", transform=ax.transAxes)
     save_fig(fig, out_dir, "figure1_architecture_schematic")
 
 
-def generate_figure2_spatiotemporal_tracking(out_dir: Path):
-    """Figure 2: 3x3 Spatio-Temporal Tracking & Residual Bias (Ground Truth vs Prediction vs Error)."""
-    fig, axes = plt.subplots(3, 3, figsize=(13, 10), sharex=True, sharey=True)
-    scales = ["SPEI-3 (Agri)", "SPEI-6 (Hydro)", "SPEI-12 (Groundwater)"]
-    sites = ["Guntur", "Jaipur", "Nagpur", "Murray-Darling", "Addis Ababa", "Phoenix", "Seville", "Pretoria"]
-    lons = [79.74, 75.78, 79.08, 143.0, 38.74, -112.07, -5.98, 28.22]
-    lats = [15.91, 26.91, 21.14, -34.0, 9.03, 33.44, 37.38, -25.74]
+def _site_lead_means(metrics: dict, method: str, scale: str, lead: str = "T+1"):
+    by_site = metrics["methods"][method][scale].get("by_site", {})
+    if not by_site:
+        raise KeyError(
+            f"metrics for {method}/{scale} lack by_site entries required for Figure 2"
+        )
+    rows = []
+    for site, leads in by_site.items():
+        if lead not in leads:
+            continue
+        if site not in SITE_COORDS:
+            continue
+        lon, lat = SITE_COORDS[site]
+        rows.append({"site": site, "lon": lon, "lat": lat, "rmse": leads[lead]["rmse"],
+                     "mae": leads[lead]["mae"]})
+    if not rows:
+        raise RuntimeError(f"No geolocated site metrics for {method}/{scale}/{lead}")
+    return pd.DataFrame(rows)
 
-    np.random.seed(42)
-    for i, s_label in enumerate(scales):
-        # Ground truth, Pred, Residual
-        gt = np.random.randn(len(sites)) * 0.9 - 0.2
-        pred = gt * 0.85 + np.random.randn(len(sites)) * 0.25
-        error = pred - gt
 
-        # Col 0: Ground Truth
-        ax0 = axes[i, 0]
-        sc0 = ax0.scatter(lons, lats, c=gt, cmap="coolwarm_r", s=120, edgecolors='k', vmin=-2.5, vmax=2.5)
-        ax0.set_title(f"{s_label}: Ground Truth", fontweight="bold")
+def generate_figure2_spatiotemporal_tracking(out_dir: Path, metrics: dict):
+    """Figure 2: site-level RMSE maps from real evaluation metrics (not synthetic)."""
+    if "droughtcast" not in metrics.get("methods", {}):
+        raise KeyError("Figure 2 requires methods.droughtcast in the evaluation JSON")
+    fig, axes = plt.subplots(3, 2, figsize=(11, 10), sharex=True, sharey=True)
+    scale_labels = ["SPEI-3", "SPEI-6", "SPEI-12"]
+    for i, scale in enumerate(SCALES):
+        frame = _site_lead_means(metrics, "droughtcast", scale, "T+1")
+        ax0, ax1 = axes[i, 0], axes[i, 1]
+        sc0 = ax0.scatter(frame["lon"], frame["lat"], c=frame["rmse"], cmap="viridis",
+                          s=120, edgecolors="k", vmin=0.5, vmax=2.0)
+        ax0.set_title(f"{scale_labels[i]}: DroughtCast RMSE (T+1)", fontweight="bold")
         ax0.set_ylabel("Latitude (deg)")
         ax0.grid(alpha=0.3)
+        fig.colorbar(sc0, ax=ax0, fraction=0.046, pad=0.04, label="RMSE")
 
-        # Col 1: DroughtCast Prediction
-        ax1 = axes[i, 1]
-        sc1 = ax1.scatter(lons, lats, c=pred, cmap="coolwarm_r", s=120, edgecolors='k', vmin=-2.5, vmax=2.5)
-        ax1.set_title(f"{s_label}: DroughtCast Pred", fontweight="bold")
+        sc1 = ax1.scatter(frame["lon"], frame["lat"], c=frame["mae"], cmap="plasma",
+                          s=120, edgecolors="k", vmin=0.3, vmax=1.5)
+        ax1.set_title(f"{scale_labels[i]}: DroughtCast MAE (T+1)", fontweight="bold")
         ax1.grid(alpha=0.3)
-
-        # Col 2: Residual Error
-        ax2 = axes[i, 2]
-        sc2 = ax2.scatter(lons, lats, c=error, cmap="bwr", s=120, edgecolors='k', vmin=-1.5, vmax=1.5)
-        ax2.set_title(f"{s_label}: Residual Bias (Pred - Obs)", fontweight="bold")
-        ax2.grid(alpha=0.3)
-
+        fig.colorbar(sc1, ax=ax1, fraction=0.046, pad=0.04, label="MAE")
         if i == 2:
             ax0.set_xlabel("Longitude (deg)")
             ax1.set_xlabel("Longitude (deg)")
-            ax2.set_xlabel("Longitude (deg)")
-
     plt.tight_layout()
     save_fig(fig, out_dir, "figure2_spatiotemporal_tracking_bias")
 
 
-def generate_figure3_hexbin(out_dir: Path):
-    np.random.seed(42)
-    n = 1000
-    y_true_dict = {}
-    y_pred_dict = {}
-    titles = ['SPEI-3 (Agri)', 'SPEI-6 (Hydro)', 'SPEI-12 (Groundwater)']
-    for t in titles:
-        yt = np.random.normal(0, 1, n)
-        # Add correlation
-        yp = 0.82 * yt + np.random.normal(0, 0.45, n)
-        y_true_dict[t] = yt
-        y_pred_dict[t] = yp
-    plot_hexbin_extreme_calibration(y_true_dict, y_pred_dict, save_path=str(out_dir / "figure3_hexbin_calibration.pdf"))
-    # Also save PNG
-    plot_hexbin_extreme_calibration(y_true_dict, y_pred_dict, save_path=str(out_dir / "figure3_hexbin_calibration.png"))
+def generate_figure3_hexbin(out_dir: Path, predictions_path: Path | None = None):
+    """Figure 3: hexbin calibration from saved prediction arrays."""
+    path = predictions_path or Path("results/predictions_test.npz")
+    require_file(path)
+    payload = np.load(path)
+    required = ("y_true", "y_pred")
+    for key in required:
+        if key not in payload:
+            raise KeyError(f"{path} must contain '{key}' with shape [N, 3, L]")
+    y_true, y_pred = payload["y_true"], payload["y_pred"]
+    titles = ["SPEI-3", "SPEI-6", "SPEI-12"]
+    y_true_dict = {titles[i]: y_true[:, i, :].ravel() for i in range(3)}
+    y_pred_dict = {titles[i]: y_pred[:, i, :].ravel() for i in range(3)}
+    plot_hexbin_extreme_calibration(y_true_dict, y_pred_dict,
+                                    save_path=str(out_dir / "figure3_hexbin_calibration.pdf"))
+    plot_hexbin_extreme_calibration(y_true_dict, y_pred_dict,
+                                    save_path=str(out_dir / "figure3_hexbin_calibration.png"))
 
 
-def generate_figure4_taylor_and_decay(out_dir: Path):
+def generate_figure4_taylor_and_decay(out_dir: Path, metrics: dict):
+    """Figure 4: Taylor-style summary and lead degradation from real metrics."""
+    methods = metrics.get("methods", {})
+    if "droughtcast" not in methods:
+        raise KeyError("Figure 4 requires methods.droughtcast")
+
     fig = plt.figure(figsize=(13, 5))
-
-    # Panel A: Polar Taylor Diagram
     ax1 = fig.add_subplot(1, 2, 1, polar=True)
-    # Radians for correlation [0, 1]
-    angles = np.arccos(np.array([0.95, 0.88, 0.82, 0.70, 0.65]))
-    radii = np.array([1.02, 0.98, 0.92, 0.85, 0.75])
-    methods = ["DroughtCast", "ConvLSTM", "XGBoost", "Ridge", "Persistence"]
-    colors = [PALETTE["droughtcast"], PALETTE["convlstm"], PALETTE["xgboost"], PALETTE["ridge"], PALETTE["persistence"]]
+    taylor_methods = [m for m in ("droughtcast", "gru", "tcn", "xgboost", "ridge", "persistence")
+                      if m in methods]
+    if len(taylor_methods) < 2:
+        raise RuntimeError("Figure 4 needs at least two methods with metrics for the Taylor panel")
 
-    for a, r, m, c in zip(angles, radii, methods, colors):
-        ax1.plot(a, r, 'o', markersize=9, color=c, label=m)
-
-    # Reference point (correlation=1.0, std=1.0)
-    ax1.plot(0, 1.0, 'k*', markersize=12, label="Observed")
+    for method in taylor_methods:
+        block = methods[method]["spei_3"].get("T+2")
+        if not block:
+            continue
+        # Approximate correlation proxy from NSE when r is unavailable: clip to [0, 1].
+        nse = float(block.get("nse", 0.0))
+        corr = float(np.clip(np.sqrt(max(nse, 0.0)), 0.0, 0.999))
+        rmse = float(block["rmse"])
+        # Standard-deviation proxy: use RMSE relative to persistence when available.
+        radius = max(0.2, min(1.5, rmse))
+        ax1.plot(np.arccos(corr), radius, "o", markersize=9,
+                 color=PALETTE.get(method, "#333333"), label=method)
+    ax1.plot(0, 1.0, "k*", markersize=12, label="reference")
     ax1.set_thetamin(0)
     ax1.set_thetamax(90)
-    ax1.set_title("(a) Multi-Model Polar Taylor Benchmark (T+2 Lead)", fontweight="bold", pad=15)
+    ax1.set_title("(a) Multi-Model Polar Taylor Proxy (SPEI-3, T+2)", fontweight="bold", pad=15)
     ax1.legend(loc="upper right", bbox_to_anchor=(1.35, 1.0), frameon=True)
 
-    # Panel B: Lead Horizon Degradation Curves
     ax2 = fig.add_subplot(1, 2, 2)
     leads = [1, 2, 3, 4]
-    dc_rmse = [0.82, 0.94, 1.05, 1.14]
-    xgb_rmse = [0.85, 1.01, 1.18, 1.28]
-    ridge_rmse = [0.88, 1.04, 1.20, 1.30]
-    pers_rmse = [1.02, 1.22, 1.38, 1.48]
-
-    ax2.plot(leads, dc_rmse, 'o-', color=PALETTE["droughtcast"], lw=2.2, label="DroughtCast (Ours)")
-    ax2.plot(leads, xgb_rmse, 's--', color=PALETTE["xgboost"], lw=1.8, label="XGBoost")
-    ax2.plot(leads, ridge_rmse, '^--', color=PALETTE["ridge"], lw=1.8, label="Ridge")
-    ax2.plot(leads, pers_rmse, 'd:', color=PALETTE["persistence"], lw=1.8, label="Persistence")
-
+    for method in ("droughtcast", "xgboost", "ridge", "persistence"):
+        if method not in methods:
+            continue
+        rmse = []
+        for lead in leads:
+            block = methods[method]["spei_3"].get(f"T+{lead}")
+            if block is None:
+                break
+            rmse.append(float(block["rmse"]))
+        if len(rmse) == len(leads):
+            ax2.plot(leads, rmse, "o-", color=PALETTE.get(method, "#333333"),
+                     lw=2.0, label=method)
     ax2.set_xlabel("Forecast Horizon Lead Time (Months)")
     ax2.set_ylabel("Root Mean Squared Error (RMSE)")
     ax2.set_xticks(leads)
     ax2.set_xticklabels(["T+1", "T+2", "T+3", "T+4"])
-    ax2.set_title("(b) Multi-Step Lead Degradation Dynamics", fontweight="bold")
+    ax2.set_title("(b) Multi-Step Lead Degradation (SPEI-3)", fontweight="bold")
     ax2.grid(alpha=0.3)
     ax2.legend(frameon=True)
-
     plt.tight_layout()
     save_fig(fig, out_dir, "figure4_polar_taylor_and_decay")
 
 
 def generate_figure5_attention(out_dir: Path):
-    interp_path = Path("results/interpretability.json")
-    if interp_path.exists():
-        data = json.loads(interp_path.read_text(encoding="utf-8"))
-        attn_3x6 = np.array(data["attn_3x6"])
-        seasonal_12x6 = np.array(data["seasonal_12x6"])
-    else:
-        attn_3x6 = np.array([
-            [0.08, 0.10, 0.12, 0.15, 0.25, 0.30],
-            [0.12, 0.14, 0.18, 0.20, 0.18, 0.18],
-            [0.22, 0.20, 0.18, 0.15, 0.13, 0.12]
-        ])
-        seasonal_12x6 = np.random.uniform(0.1, 0.25, (12, 6))
-        seasonal_12x6 = seasonal_12x6 / seasonal_12x6.sum(axis=1, keepdims=True)
-
-    plot_multihorizon_seasonal_attention(attn_3x6, seasonal_12x6, save_path=str(out_dir / "figure5_attention_heatmaps.pdf"))
-    plot_multihorizon_seasonal_attention(attn_3x6, seasonal_12x6, save_path=str(out_dir / "figure5_attention_heatmaps.png"))
+    interp_path = require_file(Path("results/interpretability.json"))
+    data = json.loads(interp_path.read_text(encoding="utf-8"))
+    if "attn_3x6" not in data or "seasonal_12x6" not in data:
+        raise KeyError("results/interpretability.json must contain attn_3x6 and seasonal_12x6")
+    attn_3x6 = np.asarray(data["attn_3x6"], dtype=float)
+    seasonal_12x6 = np.asarray(data["seasonal_12x6"], dtype=float)
+    plot_multihorizon_seasonal_attention(
+        attn_3x6, seasonal_12x6, save_path=str(out_dir / "figure5_attention_heatmaps.pdf"))
+    plot_multihorizon_seasonal_attention(
+        attn_3x6, seasonal_12x6, save_path=str(out_dir / "figure5_attention_heatmaps.png"))
 
 
 def main():
-    out_dir = Path("results/figures")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--metrics", type=Path, help="Path to evaluation JSON")
+    parser.add_argument("--out-dir", type=Path, default=Path("results/figures"))
+    parser.add_argument("--skip-hexbin", action="store_true",
+                        help="Skip Figure 3 when results/predictions_test.npz is unavailable")
+    args = parser.parse_args()
+    out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+    metrics = load_metrics(args.metrics)
+
     print("Generating Figure 1: Architecture Schematic...")
     generate_figure1_architecture(out_dir)
-    print("Generating Figure 2: Spatiotemporal Tracking Bias Map...")
-    generate_figure2_spatiotemporal_tracking(out_dir)
-    print("Generating Figure 3: Hexbin Joint Calibration...")
-    generate_figure3_hexbin(out_dir)
+    print("Generating Figure 2: Spatiotemporal Tracking from metrics...")
+    generate_figure2_spatiotemporal_tracking(out_dir, metrics)
+    if args.skip_hexbin:
+        print("Skipping Figure 3 (--skip-hexbin)")
+    else:
+        print("Generating Figure 3: Hexbin Joint Calibration...")
+        generate_figure3_hexbin(out_dir)
     print("Generating Figure 4: Polar Taylor Diagram & Decay Curves...")
-    generate_figure4_taylor_and_decay(out_dir)
+    generate_figure4_taylor_and_decay(out_dir, metrics)
     print("Generating Figure 5: Multi-Horizon Attention Heatmaps...")
     generate_figure5_attention(out_dir)
-    print(f"\nAll publication figures successfully compiled at 300 DPI (PDF, EPS, PNG) in {out_dir}")
+    print(f"\nPublication figures written to {out_dir}")
 
 
 if __name__ == "__main__":

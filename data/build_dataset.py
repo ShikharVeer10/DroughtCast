@@ -119,15 +119,24 @@ def fetch_indices(start: str, end: str, cache: Path) -> pd.DataFrame:
     return index.loc[start:end]
 
 
+def mid_month_doy(index: pd.DatetimeIndex) -> np.ndarray:
+    """Day-of-year at mid-month (not the 1st) for monthly Hargreaves Ra."""
+    days = index.days_in_month.to_numpy(dtype=float)
+    mid = index + pd.to_timedelta((days - 1.0) / 2.0, unit="D")
+    return mid.dayofyear.to_numpy(dtype=float)
+
+
 def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
-    """Monthly Hargreaves-Samani PET (mm/month) from POWER monthly extrema."""
-    # NASA ALLSKY_SFC_SW_DWN is kWh/m²/day; convert to MJ/m²/day.
-    ra = frame["ALLSKY_SFC_SW_DWN"].astype(float) * 3.6
+    """Monthly Hargreaves-Samani PET (mm/month) from POWER monthly extrema.
+
+    ET0 (mm/day) = 0.0023 * (Tmean + 17.8) * sqrt(TR) * (Ra / 2.45),
+    where Ra is extraterrestrial radiation in MJ/m²/day computed at mid-month.
+    """
     tmean = frame["T2M"].astype(float)
     # POWER monthly T2M_MAX/MIN are monthly means of daily extrema, not individual daily series.
     # Hargreaves-Samani is therefore an approximation at monthly resolution.
     trange = (frame["T2M_MAX"].astype(float) - frame["T2M_MIN"].astype(float)).clip(lower=0)
-    doy = frame.index.dayofyear.to_numpy()
+    doy = mid_month_doy(frame.index)
     phi = np.deg2rad(latitude)
     dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365.0)
     delta = 0.409 * np.sin(2 * np.pi * doy / 365.0 - 1.39)
@@ -135,8 +144,42 @@ def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
     ra_extraterrestrial = (24 * 60 / np.pi) * 0.0820 * dr * (
         ws * np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.sin(ws)
     )
-    et0_day = 0.0023 * (tmean + 17.8) * np.sqrt(trange) * np.sqrt(np.maximum(ra_extraterrestrial, 0))
+    et0_day = 0.0023 * (tmean + 17.8) * np.sqrt(trange) * (np.maximum(ra_extraterrestrial, 0) / 2.45)
     return pd.Series(np.maximum(et0_day, 0) * frame.index.days_in_month, index=frame.index, name="pet_mm")
+
+
+def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray) -> np.ndarray:
+    """Map values to standard normals via Gringorten plotting positions.
+
+    Uses one consistent plotting position for in-sample and out-of-sample
+    values, linear interpolation of z between calibration quantiles, and
+    linear extrapolation beyond the calibration min/max so dry and wet tails
+    are symmetric for equal edge spacing.
+    """
+    sorted_cal = np.sort(np.asarray(calibration, dtype=float))
+    n = len(sorted_cal)
+    if n < 2:
+        raise ValueError("nonparametric SPEI needs at least 2 calibration samples")
+    ranks = np.arange(1, n + 1, dtype=float)
+    p_cal = (ranks - 0.44) / (n + 0.12)
+    inv = NormalDist().inv_cdf
+    z_cal = np.asarray([inv(float(p)) for p in p_cal], dtype=float)
+    result = np.full(len(values), np.nan, dtype=float)
+    for i, raw in enumerate(values):
+        v = float(raw)
+        if not np.isfinite(v):
+            continue
+        if v <= sorted_cal[0]:
+            denom = sorted_cal[1] - sorted_cal[0]
+            slope = (z_cal[1] - z_cal[0]) / denom if denom != 0 else 0.0
+            result[i] = z_cal[0] + slope * (v - sorted_cal[0])
+        elif v >= sorted_cal[-1]:
+            denom = sorted_cal[-1] - sorted_cal[-2]
+            slope = (z_cal[-1] - z_cal[-2]) / denom if denom != 0 else 0.0
+            result[i] = z_cal[-1] + slope * (v - sorted_cal[-1])
+        else:
+            result[i] = float(np.interp(v, sorted_cal, z_cal))
+    return result
 
 
 def _standardize_accumulation(balance: pd.Series, scale: int, method: str,
@@ -150,17 +193,13 @@ def _standardize_accumulation(balance: pd.Series, scale: int, method: str,
         if len(subset) < 20:
             continue
         if method == "nonparametric":
-            sorted_values = np.sort(subset.to_numpy())
-            left = np.searchsorted(sorted_values, values.to_numpy(), side="left")
-            right = np.searchsorted(sorted_values, values.to_numpy(), side="right")
-            ranks = (left + right) / 2 + 1
-            probabilities = (ranks - 0.44) / (len(subset) + 0.12)
-            result.loc[values.index] = pd.Series(probabilities, index=values.index).clip(1e-6, 1 - 1e-6).map(NormalDist().inv_cdf)
+            z = _nonparametric_z_scores(values.to_numpy(dtype=float), subset.to_numpy(dtype=float))
+            result.loc[values.index] = z
         else:
             # Fit a three-parameter log-logistic (Fisk) by moments after shifting positive.
-            values = subset.to_numpy(dtype=float)
-            loc = values.min() - max(values.std() * 1e-3, 1e-6)
-            logs = np.log(values - loc)
+            cal_values = subset.to_numpy(dtype=float)
+            loc = cal_values.min() - max(cal_values.std() * 1e-3, 1e-6)
+            logs = np.log(cal_values - loc)
             shape = max(1.0, np.pi / (np.sqrt(3) * max(logs.std(ddof=1), 1e-6)))
             scale_param = np.exp(logs.mean())
             all_values = accum.loc[accum.index.month == month]
@@ -184,9 +223,13 @@ def build_site(site: str, spec: dict[str, Any], start: int, end: int, cache: Pat
         frame[f"spei_{scale}"] = _standardize_accumulation(balance, scale, method)
     for variable in POWER_VARS:
         frame[f"lag_{variable}"] = frame[variable].shift(1)
+    # Observed SPEI at the input month (unshifted) for information parity with persistence.
     for scale in (3, 6, 12):
-        frame[f"lag_spei_{scale}"] = frame[f"spei_{scale}"].shift(1)
+        frame[f"spei_{scale}_obs"] = frame[f"spei_{scale}"]
     frame = frame.join(indices, how="left")
+    # 3-month centered ONI at month m contains m+1; use the value centered on m-1.
+    if "oni" in frame.columns:
+        frame["oni"] = frame["oni"].shift(1)
     frame["site"] = site
     frame["region"] = spec["region"]
     return frame.reset_index()
@@ -277,7 +320,8 @@ def main() -> None:
         "spei_calibration_period": [args.start, "2010-12-01"],
         "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
         "sites": sites, "climate_variables": POWER_VARS, "teleconnection_indices": list(NOAA),
-        "model_features": POWER_VARS[:5] + list(NOAA) + ["lag_spei_3", "lag_spei_6", "lag_spei_12"],
+        "model_features": POWER_VARS[:5] + list(NOAA) + ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
+        "oni_alignment": "shifted +1 month so feature at m uses ONI centered on m-1",
         "speibase": str(args.speibase) if args.speibase else None,
     }, indent=2), encoding="utf-8")
     print(f"Wrote {len(data)} site-month rows to {output}")

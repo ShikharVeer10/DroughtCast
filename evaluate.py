@@ -1,6 +1,7 @@
 """Evaluate model and classical baselines once on the untouched test partition."""
 import argparse
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -126,13 +127,13 @@ def main():
     cached_baseline_results = None
     if args.reuse_baseline_report:
         cached = json.loads(Path(args.reuse_baseline_report).read_text(encoding="utf-8"))
-        cached_baseline_results = {k: cached["methods"][k] for k in ("ridge", "hist_gradient_boosting", "xgboost", "var", "convlstm") if k in cached.get("methods", {})}
+        cached_baseline_results = {k: cached["methods"][k] for k in ("ridge", "hist_gradient_boosting", "xgboost", "var", "gru", "tcn") if k in cached.get("methods", {})}
     if not args.skip_classical and cached_baseline_results is None:
-        baseline_predictions["ridge"] = fit_classical(train, test, "ridge")
-        baseline_predictions["hist_gradient_boosting"] = fit_classical(train, test, "hist_gradient_boosting")
-        baseline_predictions["xgboost"] = fit_classical(train, test, "xgboost")
-        baseline_predictions["var"] = fit_classical(train, test, "var")
-        baseline_predictions["convlstm"] = fit_classical(train, test, "convlstm")
+        for name in ("ridge", "hist_gradient_boosting", "xgboost", "var", "gru", "tcn"):
+            try:
+                baseline_predictions[name] = fit_classical(train, test, name)
+            except Exception as exc:
+                warnings.warn(f"Skipping baseline {name!r}: {exc}", stacklevel=2)
 
     all_predictions = {"droughtcast": model_array, **baseline_predictions}
     results = {name: summarize_predictions(pred, targets, mask, test.metadata)

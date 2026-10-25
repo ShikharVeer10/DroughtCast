@@ -17,7 +17,7 @@ data:
   metadata_path: "data/meta.json"
   start_year: 1981
   end_year: 2024
-  features: [PRECTOTCORR, T2M, T2MDEW, WS10M, ALLSKY_SFC_SW_DWN, oni, dmi, nao, pdo, lag_spei_3, lag_spei_6, lag_spei_12]
+  features: [PRECTOTCORR, T2M, T2MDEW, WS10M, ALLSKY_SFC_SW_DWN, oni, dmi, nao, pdo, spei_3_obs, spei_6_obs, spei_12_obs]
   seq_len: 6
   forecast_steps: 4
   # input_dim is inferred from features when loading the dataset.

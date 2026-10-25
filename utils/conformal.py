@@ -72,5 +72,6 @@ def crps_from_quantiles(prediction: np.ndarray, target: np.ndarray, quantiles: l
     valid = np.isfinite(target) if mask is None else (mask & np.isfinite(target))
     if not valid.any():
         return float("nan")
-    per_case = np.trapz(losses[valid], x=np.asarray(quantiles), axis=-1) * 2
+    integrate = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+    per_case = integrate(losses[valid], x=np.asarray(quantiles), axis=-1) * 2
     return float(np.mean(per_case))
