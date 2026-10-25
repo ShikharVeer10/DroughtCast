@@ -11,8 +11,9 @@ import yaml
 from data.loader import load_site_table
 from evaluation.baselines import fit_classical, persistence, seasonal_predictions
 from models.forecaster import MultiScaleForecaster
+from utils.artifacts import validate_checkpoint_metadata
 from utils.metrics import (calculate_rmse, calculate_mae, calculate_nse,calculate_kge, drought_event_metrics, skill_score_persistence)
-from utils.stats import dm_hac, paired_block_bootstrap_rmse_ci, wilcoxon_signed_rank_test
+from utils.stats import dm_hac, effective_sample_size, holm_adjust, paired_block_bootstrap_rmse_ci, wilcoxon_signed_rank_test
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 
@@ -59,7 +60,7 @@ def summarize_predictions(predictions, targets, mask, metadata):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--checkpoint", default="checkpoints/best_research_model.pt")
+    parser.add_argument("--checkpoint", default="checkpoints/current_model.pt")
     parser.add_argument("--output", default="results/test_metrics.json")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-classical", action="store_true")
@@ -69,24 +70,30 @@ def main():
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
         cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
-        args.holdout_region, cfg["data"].get("site_filter"))
+        args.holdout_region, cfg["data"].get("site_filter"),
+        cfg["model"].get("input_extras"), cfg["model"].get("static_context", False),
+        cfg["model"].get("heads", cfg["model"].get("head_mode", "direct")) == "residual",
+        cfg.get("sites"))
     train, test = data["train"], data["test"]
     if not len(test):
         raise RuntimeError("No valid test windows; data must cover 2017 onward")
     cfg["data"]["input_dim"] = test.X.shape[-1]
     model = MultiScaleForecaster(cfg)
     checkpoint_state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    validate_checkpoint_metadata(checkpoint_state, cfg)
     model.load_state_dict(checkpoint_state.get("model", checkpoint_state))
     model.eval()
     with torch.no_grad():
-        model_prediction, _ = model(test.X)
+        model_prediction, _ = model(test.X,
+                                    last_spei=test.last_spei,
+                                    static=test.static)
     quantiles = cfg["model"].get("quantiles")
     calibration_report = None
     if quantiles:
         from utils.conformal import calibrate_cqr, apply_cqr, interval_metrics, crps_from_quantiles
         val = data["val"]
         with torch.no_grad():
-            val_prediction = model(val.X)[0]
+            val_prediction = model(val.X, last_spei=val.last_spei, static=val.static)[0]
         calibrated = {}
         for scale_idx, scale_name in enumerate(SCALES):
             calibrated[scale_name] = calibrate_cqr(
@@ -141,9 +148,13 @@ def main():
     if cached_baseline_results is not None:
         results.update(cached_baseline_results)
 
-    # Standard Hydrological Skill Score over Persistence (SS_pers = 1 - MSE_model / MSE_pers)
+    # Standard Hydrological Skill Score over Persistence (SS_pers = 1 - MSE_model / MSE_pers).
+    # Cached classical summaries already contain their skill fields, so only
+    # methods with predictions in this process are recomputed.
     for method, values in results.items():
         if method == "persistence":
+            continue
+        if method not in all_predictions:
             continue
         for scale_idx, scale in enumerate(SCALES):
             for lead_idx, lead in enumerate(f"T+{i}" for i in range(1, cfg["data"]["forecast_steps"] + 1)):
@@ -154,44 +165,66 @@ def main():
                     y_pers = pers_preds[valid, scale_idx, lead_idx]
                     values[scale][lead]["skill_vs_persistence"] = skill_score_persistence(y_pred, y_true, y_pers)
 
-    # Statistical significance testing: DM-HAC and Non-parametric Wilcoxon Signed-Rank Tests
+    # Statistical significance testing: compare every available method with
+    # persistence and seasonal climatology using monthly site-panel losses.
     inference = {}
     for scale, scale_name in enumerate(SCALES):
         inference[scale_name] = {}
         for lead in range(targets.shape[-1]):
             valid = mask[:, scale, lead]
             y = targets[valid, scale, lead]
-            p = model_array[valid, scale, lead]
-            b_pers = pers_preds[valid, scale, lead]
-            b_clim = climatology_preds[valid, scale, lead]
-
-            loss_droughtcast = (p - y) ** 2
-            loss_pers = (b_pers - y) ** 2
-            loss_clim = (b_clim - y) ** 2
-
             sample_meta = [m for i, m in enumerate(test.metadata) if valid[i]]
             group_ids = [f"{m['site']}:{m['target_dates'][lead][:4]}" for m in sample_meta]
+            month_keys = sorted({m["target_dates"][lead][:7] for m in sample_meta})
 
-            # Monthly panel loss aggregation for HAC
-            monthly_rows = {}
-            for observed, predicted, base, meta in zip(y, p, b_pers, sample_meta):
-                month = meta["target_dates"][lead][:7]
-                monthly_rows.setdefault(month, [[], []])
-                monthly_rows[month][0].append((predicted - observed) ** 2)
-                monthly_rows[month][1].append((base - observed) ** 2)
-            month_keys = sorted(monthly_rows)
-            model_month_losses = [np.mean(monthly_rows[k][0]) for k in month_keys]
-            base_month_losses = [np.mean(monthly_rows[k][1]) for k in month_keys]
+            def panel_losses(prediction):
+                rows = {month: [] for month in month_keys}
+                for observed, predicted, meta in zip(y, prediction[valid, scale, lead], sample_meta):
+                    rows[meta["target_dates"][lead][:7]].append((predicted - observed) ** 2)
+                return np.asarray([np.mean(rows[month]) for month in month_keys], dtype=float)
 
+            droughtcast_losses = panel_losses(model_array)
+            persistence_losses = panel_losses(pers_preds)
+            climatology_losses = panel_losses(climatology_preds)
             inference[scale_name][f"T+{lead+1}"] = {
-                "wilcoxon_vs_persistence": wilcoxon_signed_rank_test(loss_droughtcast, loss_pers),
-                "wilcoxon_vs_climatology": wilcoxon_signed_rank_test(loss_droughtcast, loss_clim),
-                "dm_vs_persistence_squared_error_monthly_panel": dm_hac(model_month_losses, base_month_losses, horizon=lead+1),
-                "paired_block_bootstrap_vs_persistence": paired_block_bootstrap_rmse_ci(p, b_pers, y, group_ids),
+                "wilcoxon_vs_persistence": wilcoxon_signed_rank_test(
+                    (model_array[valid, scale, lead] - y) ** 2,
+                    (pers_preds[valid, scale, lead] - y) ** 2),
+                "wilcoxon_vs_climatology": wilcoxon_signed_rank_test(
+                    (model_array[valid, scale, lead] - y) ** 2,
+                    (climatology_preds[valid, scale, lead] - y) ** 2),
+                "dm_vs_persistence_squared_error_monthly_panel": dm_hac(
+                    droughtcast_losses, persistence_losses, horizon=lead + 1),
+                "paired_block_bootstrap_vs_persistence": paired_block_bootstrap_rmse_ci(
+                    model_array[valid, scale, lead], pers_preds[valid, scale, lead],
+                    y, group_ids),
+                "dm_vs_climatology_squared_error_monthly_panel": dm_hac(
+                    droughtcast_losses, climatology_losses, horizon=lead + 1),
             }
+            for method, prediction in all_predictions.items():
+                if method in {"droughtcast", "persistence", "seasonal_climatology", "climatology"}:
+                    continue
+                method_losses = panel_losses(prediction)
+                inference[scale_name][f"T+{lead+1}"][f"dm_{method}_vs_persistence"] = dm_hac(
+                    method_losses, persistence_losses, horizon=lead + 1)
+
+    dm_entries = []
+    for scale_values in inference.values():
+        for lead_values in scale_values.values():
+            for name, result in lead_values.items():
+                if name.startswith("dm_") and np.isfinite(result.get("p_value", np.nan)):
+                    dm_entries.append((result, result["p_value"]))
+    for adjusted, (result, _) in zip(
+        holm_adjust([p for _, p in dm_entries]), dm_entries
+    ):
+        result["p_value_holm"] = adjusted
 
     report = {"seed": args.seed, "checkpoint": args.checkpoint, "holdout_regions": args.holdout_region,
-              "test_samples": len(test), "methods": results, "paired_inference": inference}
+              "test_samples": len(test),
+              "unique_target_months": len({
+                  m["target_dates"][0][:7] for m in test.metadata
+              }),
+              "methods": results, "paired_inference": inference}
     if calibration_report is not None:
         report["probabilistic"] = calibration_report
     output = Path(args.output)

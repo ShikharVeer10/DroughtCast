@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import requests
+from data.quality import target_quality_report, validate_target_quality
 from statistics import NormalDist
 
 POWER_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
@@ -148,7 +149,8 @@ def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
     return pd.Series(np.maximum(et0_day, 0) * frame.index.days_in_month, index=frame.index, name="pet_mm")
 
 
-def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray) -> np.ndarray:
+def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray,
+                            max_abs_z: float = 8.0) -> np.ndarray:
     """Map values to standard normals via Gringorten plotting positions.
 
     Uses one consistent plotting position for in-sample and out-of-sample
@@ -156,7 +158,14 @@ def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray) -> np.n
     linear extrapolation beyond the calibration min/max so dry and wet tails
     are symmetric for equal edge spacing.
     """
+    if max_abs_z <= 0:
+        raise ValueError("max_abs_z must be positive")
     sorted_cal = np.sort(np.asarray(calibration, dtype=float))
+    sorted_cal = sorted_cal[np.isfinite(sorted_cal)]
+    if len(sorted_cal) > 1:
+        # Duplicate calibration values make tail slopes undefined. Collapse
+        # them before fitting the plotting-position transform.
+        sorted_cal = np.unique(sorted_cal)
     n = len(sorted_cal)
     if n < 2:
         raise ValueError("nonparametric SPEI needs at least 2 calibration samples")
@@ -179,7 +188,7 @@ def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray) -> np.n
             result[i] = z_cal[-1] + slope * (v - sorted_cal[-1])
         else:
             result[i] = float(np.interp(v, sorted_cal, z_cal))
-    return result
+    return np.clip(result, -max_abs_z, max_abs_z)
 
 
 def _standardize_accumulation(balance: pd.Series, scale: int, method: str,
@@ -277,7 +286,7 @@ def ingest_speibase(computed: pd.DataFrame, directory: Path, sites: dict[str, An
                 fill = point.attrs.get("_FillValue", ds[var_name].attrs.get("_FillValue"))
                 if fill is not None:
                     values[values == fill] = np.nan
-                rows.extend({"site": site, "date": pd.Timestamp(d).to_period("M").to_timestamp(),
+                rows.extend({"site": site, "date": pd.Timestamp(d).tz_localize(None).to_period("M").to_timestamp(),
                              f"spei_{scale}": v} for d, v in zip(time_index, values))
             scale_frame = pd.DataFrame(rows)
             reference = scale_frame if reference is None else reference.merge(
@@ -285,8 +294,14 @@ def ingest_speibase(computed: pd.DataFrame, directory: Path, sites: dict[str, An
     target_cols = [f"spei_{scale}" for scale in (3, 6, 12)]
     left = computed.drop(columns=[c for c in target_cols if c in computed], errors="ignore")
     result = left.merge(reference, on=["site", "date"], how="left", validate="one_to_one")
-    if not result[target_cols].notna().any(axis=None):
-        raise ValueError("SPEIbase extraction produced no valid target values for configured site/date range")
+    if not result[target_cols].notna().any(axis=0).all():
+        missing_scales = [scale for scale in target_cols if not result[scale].notna().any()]
+        raise ValueError(f"SPEIbase extraction produced no valid values for {missing_scales}")
+    # Keep observed state features consistent with the official target series.
+    for scale in (3, 6, 12):
+        observed = f"spei_{scale}_obs"
+        if observed in result:
+            result[observed] = result[f"spei_{scale}"]
     return result
 
 
@@ -314,6 +329,11 @@ def main() -> None:
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(output, index=False)
+    quality = target_quality_report(data)
+    validate_target_quality(quality)
+    (output.parent / "target_quality.json").write_text(
+        json.dumps(quality, indent=2, allow_nan=True), encoding="utf-8"
+    )
     (output.parent / "dataset_metadata.json").write_text(json.dumps({
         "source": "NASA POWER monthly point; NOAA PSL teleconnection indices",
         "period": [args.start, args.end], "spei_method": args.spei_method,
@@ -323,6 +343,7 @@ def main() -> None:
         "model_features": POWER_VARS[:5] + list(NOAA) + ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
         "oni_alignment": "shifted +1 month so feature at m uses ONI centered on m-1",
         "speibase": str(args.speibase) if args.speibase else None,
+        "target_quality_report": str(output.parent / "target_quality.json"),
     }, indent=2), encoding="utf-8")
     print(f"Wrote {len(data)} site-month rows to {output}")
 

@@ -110,7 +110,7 @@ class DroughtCast(nn.Module):
                 q_count = len(self.quantiles)
                 if q_count < 3:
                     raise ValueError("quantiles requires at least three levels (e.g. [0.1, 0.5, 0.9])")
-                if sorted(self.quantiles) != list(self.quantiles):
+                if sorted(self.quantiles) != list(self.quantiles) or len(set(self.quantiles)) != q_count:
                     raise ValueError("quantiles must be strictly increasing")
                 self.decoders = nn.ModuleList([
                     nn.Sequential(
@@ -179,8 +179,14 @@ class DroughtCast(nn.Module):
         contexts, attentions, shared_alpha = self.attend(encoded_list, x.shape[0], x.shape[1], x.device)
 
         if self.static_context:
+            if static is not None and static.ndim != 2:
+                raise ValueError("static must have shape [B, 2]")
+            if static is not None and static.shape[0] != x.shape[0]:
+                raise ValueError("static batch dimension must match x")
             if static is None:
                 static = torch.zeros(x.shape[0], self._static_dim, device=x.device, dtype=x.dtype)
+            if static.shape[1] != self._static_dim:
+                raise ValueError(f"static must have shape [B, {self._static_dim}]")
             contexts = [torch.cat([c, static], dim=-1) for c in contexts]
 
         preds: dict[str, torch.Tensor] = {}

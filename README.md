@@ -69,6 +69,26 @@ python make_figures.py
 
 Figures read only real artefacts under `results/` and fail if they are missing. Do not invent metrics; print tables from actual runs only. `base_diagram.yaml` is the reference model in every results table.
 
+## Gridded spatial evidence
+
+The repository now includes a strict spatial-evidence path for public gridded
+products. Source provenance is recorded in `data/spatial_sources.json`.
+Download and harmonize public boundaries, Copernicus DEM, and SPEIbase (or
+another documented gridded target) before producing a continuous map. A valid
+NetCDF evidence product must contain `time`, `lat`, `lon`, and matching
+`obs_spei_3/6/12` plus `pred_spei_3/6/12` variables. Run:
+
+```powershell
+python -m experiments.validate_spatial_evidence data/spatial_grid.nc
+python -m experiments.plot_spatial_evidence data/spatial_grid.nc --scale spei_6
+```
+
+The validator refuses missing or incompatible fields and reports common-grid
+RMSE, MAE, bias, POD, FAR, and CSI. It does not interpolate the eight point
+sites into a raster. Spatial metrics may be reported as generalization evidence
+only when the grid test dates and target construction are held out from model
+training.
+
 ## Assumptions
 
 - Point sites, not areal averages; Murray–Darling is a basin proxy.

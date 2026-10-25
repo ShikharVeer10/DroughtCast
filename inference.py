@@ -15,6 +15,7 @@ import torch
 import yaml
 
 from models.forecaster import MultiScaleForecaster
+from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
 
 
 class DroughtCastPredictor:
@@ -23,14 +24,28 @@ class DroughtCastPredictor:
     def __init__(self, checkpoint_path: Union[str, Path], config_path: Optional[Union[str, Path]] = None, device: str = "cpu"):
         self.device = torch.device(device)
         chk = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
-        # Checkpoint config takes precedence as it defines the exact trained weights
+        checkpoint_cfg = None
         if isinstance(chk, dict) and "config" in chk and chk["config"]:
-            self.cfg = chk["config"]
+            checkpoint_cfg = chk["config"]
         elif config_path is not None:
-            self.cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+            checkpoint_cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
         else:
             raise ValueError("Configuration must be provided or present in the checkpoint.")
 
+        if isinstance(chk, dict):
+            validate_checkpoint_metadata(chk, checkpoint_cfg)
+        if config_path is not None and isinstance(chk, dict) and chk.get("config"):
+            supplied_cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
+            supplied_cfg.setdefault("data", {})
+            if not supplied_cfg["data"].get("input_dim") and supplied_cfg["data"].get("features"):
+                supplied_cfg["data"]["input_dim"] = len(supplied_cfg["data"]["features"])
+            checkpoint_arch = chk["artifact_metadata"]["architecture_fingerprint"]
+            if architecture_fingerprint(supplied_cfg) != checkpoint_arch:
+                raise ValueError(
+                    "The supplied config does not match the checkpoint architecture. "
+                    "Use the config saved in the checkpoint or retrain."
+                )
+        self.cfg = checkpoint_cfg
         self.model = MultiScaleForecaster(self.cfg)
         state_dict = chk.get("model", chk)
         self.model.load_state_dict(state_dict)
@@ -64,13 +79,24 @@ class DroughtCastPredictor:
             preds_t, aux_t = self.model(x_t)
 
         preds = {k: v.cpu().numpy() for k, v in preds_t.items()}
-        aux = {k: (v.cpu().numpy() if v is not None else None) for k, v in aux_t.items()}
+        def to_numpy(value):
+            if value is None:
+                return None
+            if isinstance(value, torch.Tensor):
+                return value.cpu().numpy()
+            if isinstance(value, list):
+                return [to_numpy(item) for item in value]
+            if isinstance(value, tuple):
+                return tuple(to_numpy(item) for item in value)
+            return value
+
+        aux = {k: to_numpy(v) for k, v in aux_t.items()}
         return preds, aux
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run inference using a trained DroughtCast checkpoint.")
-    parser.add_argument("--checkpoint", default="checkpoints/best_research_model.pt", help="Path to model checkpoint")
+    parser.add_argument("--checkpoint", default="checkpoints/current_model.pt", help="Path to model checkpoint")
     parser.add_argument("--config", default="configs/config.yaml", help="Path to config file")
     parser.add_argument("--device", default="cpu", help="Device to run inference on (cpu, cuda)")
     args = parser.parse_args()

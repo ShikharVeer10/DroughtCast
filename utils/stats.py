@@ -4,6 +4,37 @@ from scipy import stats
 from typing import Dict, List, Optional, Tuple, Union
 
 
+def effective_sample_size(values) -> int:
+    """Estimate effective n using positive-lag autocorrelation contributions."""
+    series = np.asarray(values, dtype=float).reshape(-1)
+    series = series[np.isfinite(series)]
+    n = len(series)
+    if n < 3 or np.std(series) == 0:
+        return n
+    centered = series - series.mean()
+    variance = np.dot(centered, centered)
+    total = 1.0
+    for lag in range(1, n):
+        rho = float(np.dot(centered[lag:], centered[:-lag]) / variance)
+        if rho <= 0:
+            break
+        total += 2.0 * rho
+    return max(1, min(n, int(round(n / total))))
+
+
+def holm_adjust(p_values: list[float]) -> list[float]:
+    """Holm step-down adjustment, preserving input order and NaN values."""
+    indexed = [(i, float(p)) for i, p in enumerate(p_values) if np.isfinite(p)]
+    indexed.sort(key=lambda item: item[1])
+    adjusted = [float("nan")] * len(p_values)
+    running = 0.0
+    total = len(indexed)
+    for rank, (index, p_value) in enumerate(indexed):
+        running = max(running, min(1.0, (total - rank) * p_value))
+        adjusted[index] = running
+    return adjusted
+
+
 def wilcoxon_signed_rank_test(
     loss_model: Union[List[float], np.ndarray],
     loss_baseline: Union[List[float], np.ndarray],
@@ -40,8 +71,19 @@ def wilcoxon_signed_rank_test(
 
 
 def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
-    """Two-sided DM statistic with Newey-West HAC variance and Harvey correction."""
-    d = np.asarray(loss_model, dtype=float) - np.asarray(loss_baseline, dtype=float)
+    """Two-sided Diebold-Mariano test for paired loss series.
+
+    ``horizon`` controls the Newey-West truncation lag (horizon - 1). Pairwise
+    invalid observations are removed before estimation; mismatched lengths are
+    rejected rather than silently truncating one forecast series.
+    """
+    if horizon < 1:
+        raise ValueError("horizon must be at least 1")
+    model = np.asarray(loss_model, dtype=float).reshape(-1)
+    baseline = np.asarray(loss_baseline, dtype=float).reshape(-1)
+    if model.shape != baseline.shape:
+        raise ValueError("loss_model and loss_baseline must have equal length")
+    d = model - baseline
     d = d[np.isfinite(d)]
     n = len(d)
     if n < 3:
@@ -58,10 +100,10 @@ def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
     statistic = d.mean() / np.sqrt(long_run / n)
     correction = np.sqrt(max((n + 1 - 2 * horizon + horizon * (horizon - 1) / n) / n, 0))
     statistic *= correction
-    # Two-sided normal approximation
-    from math import erf, sqrt
-    p_value = 2 * (1 - 0.5 * (1 + erf(abs(statistic) / sqrt(2))))
-    return {"n": n, "statistic": float(statistic), "p_value": float(p_value),
+    # Use a finite-sample Student-t reference distribution.
+    p_value = float(2 * stats.t.sf(abs(statistic), df=n - 1))
+    return {"n": n, "effective_n": effective_sample_size(d),
+            "statistic": float(statistic), "p_value": float(p_value),
             "mean_loss_difference": float(d.mean())}
 
 

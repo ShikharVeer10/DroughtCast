@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 
 from data.loader import load_site_table
 from models.forecaster import MultiScaleForecaster
+from utils.artifacts import artifact_metadata
 
 
 def seed_everything(seed: int):
@@ -49,21 +50,49 @@ def unweighted_mse(prediction, target, mask):
     return (((prediction - target) ** 2) * valid).sum() / valid.sum().clamp_min(1.0)
 
 
+def consistency_loss(predictions):
+    """Penalize disagreement between neighboring accumulation-scale forecasts."""
+    return sum(torch.mean((predictions[a] - predictions[b]) ** 2)
+               for a, b in (("spei_3", "spei_6"), ("spei_6", "spei_12")))
+
+
+def crps_loss(prediction, target, mask, quantiles):
+    q = torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device).view(1, 1, -1)
+    error = target.unsqueeze(-1) - prediction
+    losses = torch.maximum(q * error, (q - 1.0) * error)
+    valid = mask.unsqueeze(-1).to(prediction.dtype)
+    q_widths = torch.diff(torch.as_tensor(quantiles, dtype=prediction.dtype,
+                                           device=prediction.device))
+    weights = torch.cat([q_widths[:1] / 2, (q_widths[:-1] + q_widths[1:]) / 2,
+                         q_widths[-1:] / 2]).view(1, 1, -1)
+    return (losses * valid * weights).sum() / valid.sum().clamp_min(1.0)
+
+
 def epoch_loss(model, loader, optimizer=None, extreme_weight=3.0, extreme_threshold=-1.5,
-               quantiles=None, task_weighting="uncertainty", task_log_vars=None, loss_kind="mse"):
+               quantiles=None, task_weighting="uncertainty", task_log_vars=None, loss_kind="mse",
+               consistency_weight=0.0):
     training = optimizer is not None
     model.train(training)
     total, total_mse, count = 0.0, 0.0, 0
-    for x, y, mask, _ in loader:
+    for batch in loader:
+        x, y, mask, _ = batch[:4]
+        residual = model.head_mode == "residual"
+        last_spei = batch[4] if residual and len(batch) > 4 else None
+        static_index = 5 if residual else 4
+        static = batch[static_index] if model.static_context and len(batch) > static_index else None
         if training:
             optimizer.zero_grad(set_to_none=True)
         with torch.set_grad_enabled(training):
-            predictions, _ = model(x)
+            predictions, _ = model(x, last_spei=last_spei, static=static)
             task_losses = []
             mse_losses = []
             for i, k in enumerate(("spei_3", "spei_6", "spei_12")):
                 if quantiles:
-                    task_losses.append(pinball_loss(predictions[k], y[:, i], mask[:, i], quantiles, extreme_weight, extreme_threshold))
+                    base_loss = crps_loss if loss_kind == "crps" else pinball_loss
+                    task_losses.append(base_loss(predictions[k], y[:, i], mask[:, i], quantiles)
+                                       if loss_kind == "crps" else
+                                       base_loss(predictions[k], y[:, i], mask[:, i], quantiles,
+                                                 extreme_weight, extreme_threshold))
                     median = predictions[k][..., quantiles.index(0.5)] if 0.5 in quantiles else predictions[k][..., len(quantiles) // 2]
                     mse_losses.append(unweighted_mse(median, y[:, i], mask[:, i]))
                 else:
@@ -76,6 +105,12 @@ def epoch_loss(model, loader, optimizer=None, extreme_weight=3.0, extreme_thresh
             else:
                 loss = sum(task_losses)
             selection_mse = sum(mse_losses)
+            if consistency_weight:
+                loss = loss + consistency_weight * consistency_loss({
+                    k: (value[..., quantiles.index(0.5)] if quantiles and 0.5 in quantiles
+                        else value[..., len(quantiles) // 2] if quantiles else value)
+                    for k, value in predictions.items()
+                })
             if training:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -100,7 +135,10 @@ def main():
         raise FileNotFoundError(f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first.")
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
         cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
-        args.holdout_region, cfg["data"].get("site_filter"))
+        args.holdout_region, cfg["data"].get("site_filter"),
+        cfg["model"].get("input_extras"), cfg["model"].get("static_context", False),
+        cfg["model"].get("heads", cfg["model"].get("head_mode", "direct")) == "residual",
+        cfg.get("sites"))
     train, val = data["train"], data["val"]
     if not len(train) or not len(val):
         raise RuntimeError("Training and validation splits need real monthly observations through 2015")
@@ -118,7 +156,7 @@ def main():
         params.append(task_log_vars)
     opt = torch.optim.AdamW(params, lr=cfg["training"]["learning_rate"], weight_decay=cfg["training"].get("weight_decay", 1e-4))
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, mode="min", patience=cfg["training"].get("lr_patience", 5), factor=.5)
-    checkpoint = Path(args.checkpoint) if args.checkpoint else Path(cfg["training"]["checkpoint_dir"]) / "best_research_model.pt"
+    checkpoint = Path(args.checkpoint) if args.checkpoint else Path(cfg["training"]["checkpoint_dir"]) / "current_model.pt"
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     best, stale = float("inf"), 0
     ext_weight = cfg["training"].get("extreme_weight", 3.0)
@@ -127,10 +165,11 @@ def main():
 
     for epoch in range(cfg["training"]["epochs"]):
         tr_loss, tr_mse = epoch_loss(model, train_loader, opt, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
-                                     quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars, loss_kind=loss_kind)
+                                     quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
+                                     loss_kind=loss_kind, consistency_weight=model.consistency_weight)
         va_loss, va_mse = epoch_loss(model, val_loader, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
                                      quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
-                                     loss_kind=loss_kind)
+                                     loss_kind=loss_kind, consistency_weight=model.consistency_weight)
         # Checkpoint on unweighted validation MSE; learned uncertainty weights change over epochs.
         scheduler.step(va_mse)
         if (epoch + 1) % 10 == 0 or epoch == 0:
@@ -140,7 +179,8 @@ def main():
             best, stale = va_mse, 0
             state = {"model": model.state_dict(),
                      "task_log_vars": task_log_vars.detach().cpu() if task_log_vars is not None else None,
-                     "config": cfg, "seed": seed, "best_val_mse": best, "best_val_loss": va_loss}
+                     "config": cfg, "seed": seed, "best_val_mse": best, "best_val_loss": va_loss,
+                     "artifact_metadata": artifact_metadata(cfg, cfg["data"]["path"], seed)}
             torch.save(state, checkpoint)
         else:
             stale += 1

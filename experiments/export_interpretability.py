@@ -52,13 +52,17 @@ def compute_permutation_importance(model, dataset, feature_names, n_repeats=5):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--checkpoint", default="checkpoints/best_research_model.pt")
+    parser.add_argument("--checkpoint", default="checkpoints/current_model.pt")
     parser.add_argument("--output", default="results/interpretability.json")
     args = parser.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
-        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"))
+        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
+        input_extras=cfg["model"].get("input_extras"),
+        static_context=cfg["model"].get("static_context", False),
+        residual_heads=cfg["model"].get("heads", cfg["model"].get("head_mode", "direct")) == "residual",
+        site_specs=cfg.get("sites"))
     test = data["test"]
     cfg["data"]["input_dim"] = test.X.shape[-1]
 
@@ -69,7 +73,7 @@ def main():
 
     # Extract test attention weights
     with torch.no_grad():
-        _, aux = model(test.X)
+        _, aux = model(test.X, last_spei=test.last_spei, static=test.static)
     attention = aux["attention"].cpu().numpy()
 
     # Per-horizon attention distribution across lags (t-6 to t-1)

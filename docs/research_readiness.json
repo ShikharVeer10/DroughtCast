@@ -1,0 +1,25 @@
+{
+  "status": "not_ready_for_top_tier_submission",
+  "supported": [
+    "Chronological train/validation/test windows with gap periods",
+    "Train-only feature normalization",
+    "Canonical shared LSTM and temporal attention architecture",
+    "Automated architecture, pipeline, target, and artifact tests",
+    "Target quality diagnostics with per-scale and per-site summaries",
+    "Checkpoint dataset/config/architecture fingerprints",
+    "HAC Diebold-Mariano tests with effective sample size and Holm adjustment"
+  ],
+  "pending": [
+    "Official SPEIbase comparison for all sites and scales",
+    "Five-seed complete classical baseline study",
+    "Five-seed leave-region-out evaluation",
+    "Dependence-aware probabilistic calibration experiments",
+    "Modern Transformer/TFT baseline comparison",
+    "Failure-analysis tables and event-conditioned robustness"
+  ],
+  "blocking_risks": [
+    "SPEI tail clipping must be validated against official SPEIbase or domain-approved limits",
+    "The current architecture is incremental rather than methodologically novel",
+    "Top-tier claims require complete multi-seed and regional evidence"
+  ]
+}

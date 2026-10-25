@@ -12,6 +12,7 @@ import yaml
 BASE_FEATURES = ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN",
                  "oni", "dmi", "nao", "pdo", "spei_3_obs", "spei_6_obs", "spei_12_obs"]
 VARIANTS = {
+    "full_model": {},
     "no_attention": {"model": {"attention": "none"}},
     "head_specific_attention": {"model": {"attention": "head_specific"}},
     "separate_encoders": {"model": {"separate_encoders": True}},
@@ -53,7 +54,9 @@ if __name__ == "__main__":
     base = yaml.safe_load(Path("configs/config.yaml").read_text(encoding="utf-8"))
     out_dir = Path("results/ablations")
     out_dir.mkdir(parents=True, exist_ok=True)
-    manifest = {"seeds": args.seeds, "variants": args.variants, "primary_architecture": "shared LSTM attention; ablations only"}
+    manifest = {"seeds": args.seeds, "variants": args.variants,
+                "primary_architecture": "shared LSTM attention; ablations only",
+                "baseline_variant": "full_model"}
     (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     for variant in args.variants:
         variant_dir = out_dir / variant
