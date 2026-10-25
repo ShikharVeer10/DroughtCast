@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 1 — Canonical architecture
+
+- Single model class `DroughtCast` (`MultiScaleForecaster` deprecated alias); removed legacy `DroughtCastModel` / `UncertaintyWeightedMultiTaskLoss` implementations.
+- Additive temporal attention `score_t = v^T tanh(W h_t)`; `configs/base_diagram.yaml` locks diagram settings; unknown/dead config keys raise.
+- Conformance test writes `results/param_count.json`. README documents the real 20 ablation variants.
+
 ## Phase 0 — Data/target integrity (blocking)
 
 - **PET (Hargreaves-Samani):** use `ET0 = 0.0023*(Tmean+17.8)*sqrt(TR)*(Ra/2.45)` with mid-month day-of-year; remove unused surface-radiation term. Same formula in `data/api.py`.

@@ -1,3 +1,5 @@
+# Default training config. Diagram-faithful defaults match configs/base_diagram.yaml.
+# Unknown keys are rejected by models.config_schema.validate_config.
 experiment:
   name: "DroughtCast multi-scale SPEI forecasting"
   seed: 42
@@ -20,23 +22,20 @@ data:
   features: [PRECTOTCORR, T2M, T2MDEW, WS10M, ALLSKY_SFC_SW_DWN, oni, dmi, nao, pdo, spei_3_obs, spei_6_obs, spei_12_obs]
   seq_len: 6
   forecast_steps: 4
-  # input_dim is inferred from features when loading the dataset.
 
 model:
-  input_dim: 12                  # Phase 1: 12 climate & ocean variables (T-6 to T-1)
-  hidden_dim: 64                 # Phase 2: LSTM Layer 1 hidden units (64)
-  out_hidden_dim: 32             # Phase 2: LSTM Layer 2 hidden units (32) -> Context vector c in R^32
-  num_layers: 2
+  hidden_dim_1: 64
+  hidden_dim_2: 32
   dropout: 0.2
-  spei3_dropout: 0.35            # Prevents SPEI-3 validation MAE divergence
-  forecast_steps: 1              # Set to 4 for simultaneous [T+1, T+2, T+3, T+4] output per head
-  num_quantiles: 1
-  use_teleconnection_gate: false # Ablation Toggle B
-  use_multi_horizon_attn: false  # Ablation Toggle C
-  use_cascade_decoder: false     # Ablation Toggle D 
-
-
-
+  encoder: lstm
+  attention: shared
+  heads: direct
+  use_cascaded_decoder: false
+  variable_gate: false
+  separate_encoders: false
+  static_context: false
+  input_extras: []
+  consistency_weight: 0.0
 
 training:
   batch_size: 32
@@ -47,3 +46,5 @@ training:
   lr_patience: 5
   extreme_weight: 1.0
   checkpoint_dir: checkpoints
+  loss: mse
+  task_weighting: fixed

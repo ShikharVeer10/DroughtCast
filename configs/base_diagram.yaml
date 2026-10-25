@@ -1,0 +1,51 @@
+# Canonical DroughtCast architecture (exact diagram settings).
+# All Phase-2 optional upgrades are OFF here.
+experiment:
+  name: "DroughtCast base diagram"
+  seed: 42
+
+sites:
+  guntur: {lat: 15.9129, lon: 79.74, region: south_asia}
+  jaipur: {lat: 26.9124, lon: 75.7873, region: south_asia}
+  nagpur: {lat: 21.1458, lon: 79.0882, region: south_asia}
+  murray_darling: {lat: -34.0, lon: 143.0, region: australia}
+  addis_ababa: {lat: 9.03, lon: 38.74, region: east_africa}
+  phoenix: {lat: 33.4484, lon: -112.074, region: us_southwest}
+  seville: {lat: 37.3891, lon: -5.9845, region: mediterranean}
+  pretoria: {lat: -25.7479, lon: 28.2293, region: southern_africa}
+
+data:
+  path: "data/monthly_sites.csv"
+  metadata_path: "data/meta.json"
+  start_year: 1981
+  end_year: 2024
+  features: [PRECTOTCORR, T2M, T2MDEW, WS10M, ALLSKY_SFC_SW_DWN, oni, dmi, nao, pdo, spei_3_obs, spei_6_obs, spei_12_obs]
+  seq_len: 6
+  forecast_steps: 4
+
+model:
+  hidden_dim_1: 64
+  hidden_dim_2: 32
+  dropout: 0.2
+  encoder: lstm
+  attention: shared          # one additive temporal attention; ablations: none | head_specific
+  heads: direct              # direct MLP heads; ablation: residual
+  use_cascaded_decoder: false
+  variable_gate: false
+  separate_encoders: false
+  static_context: false
+  input_extras: []
+  consistency_weight: 0.0
+  # quantiles: omitted => point output
+
+training:
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 12
+  lr_patience: 5
+  extreme_weight: 1.0
+  checkpoint_dir: checkpoints
+  loss: mse
+  task_weighting: fixed

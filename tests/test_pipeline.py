@@ -5,7 +5,7 @@ import torch
 from data.loader import split_for_date, load_site_table
 from data.preprocessing import ClimateNormalizer
 from evaluation.baselines import persistence
-from models.forecaster import MultiScaleForecaster
+from models.forecaster import DroughtCast, MultiScaleForecaster
 
 
 def test_split_dates_and_gap():
