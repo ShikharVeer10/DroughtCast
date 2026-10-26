@@ -70,7 +70,8 @@ def wilcoxon_signed_rank_test(
     }
 
 
-def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
+def dm_hac(loss_model, loss_baseline, horizon: int = 1,
+           accumulation_scale: int = 1) -> dict:
     """Two-sided Diebold-Mariano test for paired loss series.
 
     ``horizon`` controls the Newey-West truncation lag (horizon - 1). Pairwise
@@ -89,7 +90,9 @@ def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
     if n < 3:
         return {"n": n, "statistic": float("nan"), "p_value": float("nan")}
     centered = d - d.mean()
-    lag = max(0, min(horizon - 1, n - 1))
+    if accumulation_scale < 1:
+        raise ValueError("accumulation_scale must be at least 1")
+    lag = max(0, min(max(horizon - 1, accumulation_scale), n - 1))
     long_run = float(np.dot(centered, centered) / n)
     for k in range(1, lag + 1):
         covariance = float(np.dot(centered[k:], centered[:-k]) / n)
@@ -102,7 +105,7 @@ def dm_hac(loss_model, loss_baseline, horizon: int = 1) -> dict:
     statistic *= correction
     # Use a finite-sample Student-t reference distribution.
     p_value = float(2 * stats.t.sf(abs(statistic), df=n - 1))
-    return {"n": n, "effective_n": effective_sample_size(d),
+    return {"n": n, "effective_n": effective_sample_size(d), "hac_bandwidth": lag,
             "statistic": float(statistic), "p_value": float(p_value),
             "mean_loss_difference": float(d.mean())}
 
@@ -125,3 +128,32 @@ def paired_block_bootstrap_rmse_ci(prediction, baseline, target, groups,
         rows = np.concatenate([indices[g] for g in chosen])
         diffs[i] = np.sqrt(np.mean((p[rows] - y[rows]) ** 2)) - np.sqrt(np.mean((b[rows] - y[rows]) ** 2))
     return {"n_blocks": int(len(unique)), "rmse_difference_ci95": np.quantile(diffs, [.025, .975]).tolist()}
+
+
+def count_drought_episodes(metadata, targets, mask, scale_index: int,
+                           threshold: float = -1.0) -> int:
+    """Count independent per-site drought runs in chronological target records."""
+    episodes = 0
+    grouped = {}
+    for i, item in enumerate(metadata):
+        grouped.setdefault(item["site"], []).append(i)
+    for rows in grouped.values():
+        records = {}
+        for i in rows:
+            for lead, date in enumerate(metadata[i]["target_dates"]):
+                if mask[i, scale_index, lead] and np.isfinite(targets[i, scale_index, lead]):
+                    month = date[:7]
+                    records[month] = min(records.get(month, float("inf")),
+                                         float(targets[i, scale_index, lead]))
+        previous_month = None
+        in_episode = False
+        for month, value in sorted(records.items()):
+            year, mon = map(int, month.split("-"))
+            ordinal = year * 12 + mon
+            contiguous = previous_month is not None and ordinal == previous_month + 1
+            drought = value <= threshold
+            if drought and (not in_episode or not contiguous):
+                episodes += 1
+            in_episode = drought
+            previous_month = ordinal
+    return episodes

@@ -13,7 +13,9 @@ from evaluation.baselines import fit_classical, persistence, seasonal_prediction
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import validate_checkpoint_metadata
 from utils.metrics import (calculate_rmse, calculate_mae, calculate_nse,calculate_kge, drought_event_metrics, skill_score_persistence)
-from utils.stats import dm_hac, effective_sample_size, holm_adjust, paired_block_bootstrap_rmse_ci, wilcoxon_signed_rank_test
+from utils.stats import (count_drought_episodes, dm_hac, effective_sample_size,
+                         holm_adjust, paired_block_bootstrap_rmse_ci,
+                         wilcoxon_signed_rank_test)
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 
@@ -105,14 +107,23 @@ def main():
             lower, upper = apply_cqr(pred, calibrated[scale_name])
             y = test.Y[:, scale_idx].numpy()
             mask_scale = test.mask[:, scale_idx].numpy()
+            val_pred = val_prediction[scale_name].numpy()
+            val_y = val.Y[:, scale_idx].numpy()
+            val_mask = val.mask[:, scale_idx].numpy()
+            val_lower, val_upper = apply_cqr(val_pred, calibrated[scale_name])
             metrics = {}
             for lead in range(y.shape[1]):
                 valid = mask_scale[:, lead]
+                val_valid = val_mask[:, lead]
                 before = interval_metrics(pred[valid, lead, 0], pred[valid, lead, 2], y[valid, lead])
                 after = interval_metrics(lower[valid, lead], upper[valid, lead], y[valid, lead])
                 metrics[f"T+{lead+1}"] = {
-                    "before": before,
-                    "after": after,
+                    "validation_before": interval_metrics(
+                        val_pred[val_valid, lead, 0], val_pred[val_valid, lead, 2], val_y[val_valid, lead]),
+                    "validation_after": interval_metrics(
+                        val_lower[val_valid, lead], val_upper[val_valid, lead], val_y[val_valid, lead]),
+                    "test_before": before,
+                    "test_after": after,
                     "calibration_quantile": calibrated[scale_name][lead],
                     "crps_approx": crps_from_quantiles(pred[valid, lead:lead+1, :], y[valid, lead:lead+1], quantiles)
                 }
@@ -129,7 +140,6 @@ def main():
     baseline_predictions = {
         "persistence": pers_preds,
         "climatology": climatology_preds,
-        "seasonal_climatology": climatology_preds,
     }
     cached_baseline_results = None
     if args.reuse_baseline_report:
@@ -143,6 +153,10 @@ def main():
                 warnings.warn(f"Skipping baseline {name!r}: {exc}", stacklevel=2)
 
     all_predictions = {"droughtcast": model_array, **baseline_predictions}
+    for method, prediction in all_predictions.items():
+        for other, other_prediction in all_predictions.items():
+            if method < other and np.array_equal(prediction, other_prediction, equal_nan=True):
+                raise RuntimeError(f"Methods {method!r} and {other!r} produced identical predictions")
     results = {name: summarize_predictions(pred, targets, mask, test.metadata)
                for name, pred in all_predictions.items()}
     if cached_baseline_results is not None:
@@ -193,20 +207,33 @@ def main():
                 "wilcoxon_vs_climatology": wilcoxon_signed_rank_test(
                     (model_array[valid, scale, lead] - y) ** 2,
                     (climatology_preds[valid, scale, lead] - y) ** 2),
+                "primary_site_year_block_bootstrap_vs_persistence": paired_block_bootstrap_rmse_ci(
+                    model_array[valid, scale, lead], pers_preds[valid, scale, lead],
+                    y, group_ids),
+                "secondary_pooled_wilcoxon_vs_persistence": wilcoxon_signed_rank_test(
+                    (model_array[valid, scale, lead] - y) ** 2,
+                    (pers_preds[valid, scale, lead] - y) ** 2),
                 "dm_vs_persistence_squared_error_monthly_panel": dm_hac(
-                    droughtcast_losses, persistence_losses, horizon=lead + 1),
+                    droughtcast_losses, persistence_losses, horizon=lead + 1,
+                    accumulation_scale=(3, 6, 12)[scale]),
                 "paired_block_bootstrap_vs_persistence": paired_block_bootstrap_rmse_ci(
                     model_array[valid, scale, lead], pers_preds[valid, scale, lead],
                     y, group_ids),
+                "test_effective_sample_size": effective_sample_size(droughtcast_losses),
+                "independent_drought_episodes": count_drought_episodes(
+                    [m for i, m in enumerate(test.metadata) if valid[i]],
+                    targets[valid], mask[valid], scale),
                 "dm_vs_climatology_squared_error_monthly_panel": dm_hac(
-                    droughtcast_losses, climatology_losses, horizon=lead + 1),
+                    droughtcast_losses, climatology_losses, horizon=lead + 1,
+                    accumulation_scale=(3, 6, 12)[scale]),
             }
             for method, prediction in all_predictions.items():
                 if method in {"droughtcast", "persistence", "seasonal_climatology", "climatology"}:
                     continue
                 method_losses = panel_losses(prediction)
                 inference[scale_name][f"T+{lead+1}"][f"dm_{method}_vs_persistence"] = dm_hac(
-                    method_losses, persistence_losses, horizon=lead + 1)
+                    method_losses, persistence_losses, horizon=lead + 1,
+                    accumulation_scale=(3, 6, 12)[scale])
 
     dm_entries = []
     for scale_values in inference.values():

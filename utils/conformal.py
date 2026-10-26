@@ -35,12 +35,11 @@ def calibrate_cqr(prediction: np.ndarray, target: np.ndarray, mask: np.ndarray,
 
 
 def apply_cqr(prediction: np.ndarray, corrections: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    if not np.isfinite(corrections).all():
+        raise ValueError("CQR corrections must be finite; validation sample is too small for requested coverage")
     lo = 0
     hi = prediction.shape[-1] - 1
     delta = corrections.reshape(1, -1)
-    # CQR corrections can be negative when the base interval is over-wide.
-    # Constrain it to zero for valid, nested prediction intervals.
-    delta = np.maximum(delta, 0.0)
     return prediction[:, :, lo] - delta, prediction[:, :, hi] + delta
 
 

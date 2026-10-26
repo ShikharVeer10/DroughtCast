@@ -154,26 +154,29 @@ def _split_train_val_tensors(dataset, scale: int, val_fraction: float = 0.15):
     return x[:-n_val], y[:-n_val], x[-n_val:], y[-n_val:]
 
 
-def fit_gru_baseline(train_dataset, test_dataset, epochs=50):
-    pred = np.full_like(test_dataset.Y.numpy(), np.nan, dtype=float)
-    for scale in range(3):
-        x_tr, y_tr, x_va, y_va = _split_train_val_tensors(train_dataset, scale)
-        model = GRUBaseline(in_features=x_tr.shape[-1], forecast_steps=y_tr.shape[-1])
-        model = _train_torch_baseline(model, x_tr, y_tr, x_va, y_va, epochs=epochs)
-        with torch.no_grad():
-            pred[:, scale] = model(test_dataset.X).numpy()
-    return pred
+def fit_gru_baseline(train_dataset, test_dataset, epochs=50, seeds=(11, 22, 33, 44, 55)):
+    return _fit_neural_baseline(GRUBaseline, train_dataset, test_dataset, epochs, seeds)
 
 
-def fit_tcn_baseline(train_dataset, test_dataset, epochs=50):
-    pred = np.full_like(test_dataset.Y.numpy(), np.nan, dtype=float)
-    for scale in range(3):
-        x_tr, y_tr, x_va, y_va = _split_train_val_tensors(train_dataset, scale)
-        model = TCNBaseline(in_features=x_tr.shape[-1], forecast_steps=y_tr.shape[-1])
-        model = _train_torch_baseline(model, x_tr, y_tr, x_va, y_va, epochs=epochs)
-        with torch.no_grad():
-            pred[:, scale] = model(test_dataset.X).numpy()
-    return pred
+def fit_tcn_baseline(train_dataset, test_dataset, epochs=50, seeds=(11, 22, 33, 44, 55)):
+    return _fit_neural_baseline(TCNBaseline, train_dataset, test_dataset, epochs, seeds)
+
+
+def _fit_neural_baseline(model_type, train_dataset, test_dataset, epochs, seeds):
+    if len(seeds) != 5:
+        raise ValueError("GRU and TCN baseline ensembles require exactly five declared seeds")
+    seed_predictions = []
+    for seed in seeds:
+        prediction = np.full_like(test_dataset.Y.numpy(), np.nan, dtype=float)
+        for scale in range(3):
+            x_tr, y_tr, x_va, y_va = _split_train_val_tensors(train_dataset, scale)
+            torch.manual_seed(int(seed))
+            model = model_type(in_features=x_tr.shape[-1], forecast_steps=y_tr.shape[-1])
+            model = _train_torch_baseline(model, x_tr, y_tr, x_va, y_va, epochs=epochs)
+            with torch.no_grad():
+                prediction[:, scale] = model(test_dataset.X).numpy()
+        seed_predictions.append(prediction)
+    return np.mean(np.stack(seed_predictions), axis=0)
 
 
 def fit_var_baseline(train_dataset, test_dataset, maxlags=3):

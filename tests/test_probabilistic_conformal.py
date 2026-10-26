@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import pytest
 
 from models.forecaster import MultiScaleForecaster
 from utils.conformal import apply_cqr, calibrate_cqr, crps_from_quantiles, interval_metrics
@@ -30,6 +31,14 @@ def test_cqr_uses_validation_scores_and_reports_coverage():
     assert metrics["n"] == 3
     assert 0 <= metrics["coverage"] <= 1
     assert crps_from_quantiles(test_pred, test_y, [0.1, 0.5, 0.9]) >= 0
+
+
+def test_cqr_preserves_negative_correction_without_silent_clipping():
+    from utils.conformal import apply_cqr
+    prediction = np.array([[[0.0, 0.5, 1.0]]])
+    lower, upper = apply_cqr(prediction, np.array([-0.25]))
+    assert lower[0, 0] == pytest.approx(0.25)
+    assert upper[0, 0] == pytest.approx(0.75)
 
 
 def test_integrated_gradients_has_input_shape_and_finite_values():

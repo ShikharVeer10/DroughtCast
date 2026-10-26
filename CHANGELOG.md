@@ -6,6 +6,13 @@
 - When SPEIbase files are supplied, validate computed SPEI per site and accumulation scale before replacing targets; `results/speibase_validation.csv` records sample count, correlation, RMSE, and bias.
 - No scientific values or reported performance metrics were changed.
 
+## Phase 2 — Evaluation integrity (2026-10-26)
+
+- GRU and TCN baselines now average five declared seeds and select checkpoints by validation MSE; both retain equal zero-search tuning budgets alongside fixed classical baseline settings.
+- Evaluation rejects exact prediction duplicates, reports a site-year block bootstrap as the primary paired comparison, labels pooled Wilcoxon secondary, enforces DM-HAC bandwidth at least the SPEI accumulation scale, and reports effective sample size and independent drought episodes.
+- Probabilistic evaluation reports validation and test coverage; CRPS remains explicitly `crps_approx` for the configured three quantiles. CQR corrections are applied without silent clipping and nonfinite corrections raise an error.
+- No existing results were regenerated or reinterpreted.
+
 ## Phase 1 — Canonical architecture
 
 - Single model class `DroughtCast` (`MultiScaleForecaster` deprecated alias); removed legacy `DroughtCastModel` / `UncertaintyWeightedMultiTaskLoss` implementations.
