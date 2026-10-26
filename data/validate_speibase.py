@@ -22,11 +22,12 @@ def compare(computed: pd.DataFrame, reference: pd.DataFrame) -> pd.DataFrame:
             a, b = group[f"spei_{scale}_computed"], group[f"spei_{scale}_reference"]
             valid = a.notna() & b.notna()
             if valid.sum() < 3:
-                corr = rmse = np.nan
+                corr = rmse = bias = np.nan
             else:
                 corr = a[valid].corr(b[valid])
                 rmse = float(np.sqrt(np.mean((a[valid] - b[valid]) ** 2)))
-            results.append({"site": site, "scale": scale, "n": int(valid.sum()), "correlation": corr, "rmse": rmse})
+                bias = float(np.mean(a[valid] - b[valid]))
+            results.append({"site": site, "scale": scale, "n": int(valid.sum()), "correlation": corr, "rmse": rmse, "bias": bias})
     return pd.DataFrame(results)
 
 

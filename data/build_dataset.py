@@ -236,9 +236,12 @@ def build_site(site: str, spec: dict[str, Any], start: int, end: int, cache: Pat
     for scale in (3, 6, 12):
         frame[f"spei_{scale}_obs"] = frame[f"spei_{scale}"]
     frame = frame.join(indices, how="left")
-    # 3-month centered ONI at month m contains m+1; use the value centered on m-1.
-    if "oni" in frame.columns:
-        frame["oni"] = frame["oni"].shift(1)
+    # For each monthly index, attach the previous month's published value to
+    # month m. This is conservative for centered ONI (which includes m+1)
+    # and gives a single, auditable alignment rule across all indices.
+    for name in ("oni", "dmi", "nao", "pdo"):
+        if name in frame.columns:
+            frame[name] = frame[name].shift(1)
     frame["site"] = site
     frame["region"] = spec["region"]
     return frame.reset_index()
@@ -325,6 +328,11 @@ def main() -> None:
     data = pd.concat([build_site(name, spec, args.start, args.end, Path(args.cache), args.spei_method, indices)
                       for name, spec in sites.items()], ignore_index=True)
     if args.speibase:
+        from data.validate_speibase import compare_netcdf
+        validation = compare_netcdf(data, args.speibase, args.speibase_variable, sites)
+        validation_path = Path("results/speibase_validation.csv")
+        validation_path.parent.mkdir(parents=True, exist_ok=True)
+        validation.to_csv(validation_path, index=False)
         data = ingest_speibase(data, args.speibase, sites, args.speibase_variable)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -341,7 +349,7 @@ def main() -> None:
         "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
         "sites": sites, "climate_variables": POWER_VARS, "teleconnection_indices": list(NOAA),
         "model_features": POWER_VARS[:5] + list(NOAA) + ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
-        "oni_alignment": "shifted +1 month so feature at m uses ONI centered on m-1",
+        "index_alignment": "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later",
         "speibase": str(args.speibase) if args.speibase else None,
         "target_quality_report": str(output.parent / "target_quality.json"),
     }, indent=2), encoding="utf-8")

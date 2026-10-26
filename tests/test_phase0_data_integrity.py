@@ -123,7 +123,32 @@ def test_window_spei_no_target_leakage(tmp_path):
     for split in ("train", "val", "test"):
         for meta in data[split].metadata:
             input_dates = [pd.Timestamp(d) for d in meta["dates"]]
+            index_source_dates = [pd.Timestamp(d) for d in meta["index_source_dates"]]
             target_dates = [pd.Timestamp(d) for d in meta["target_dates"]]
             last_input = max(input_dates)
             assert all(d <= last_input for d in input_dates)
             assert all(d > last_input for d in target_dates)
+            assert all(d < min(target_dates) for d in index_source_dates)
+
+
+def test_all_monthly_indices_are_aligned_to_previous_month():
+    from data.build_dataset import build_site
+
+    dates = pd.date_range("2000-01-01", periods=4, freq="MS")
+    frame = pd.DataFrame({
+        "PRECTOTCORR": 1.0, "T2M": 20.0, "T2MDEW": 10.0, "WS10M": 2.0,
+        "ALLSKY_SFC_SW_DWN": 5.0, "T2M_MAX": 25.0, "T2M_MIN": 15.0,
+    }, index=dates)
+
+    def fake_fetch(*_args):
+        return frame.copy()
+
+    from unittest.mock import patch
+    indices = pd.DataFrame({name: np.arange(4, dtype=float) for name in ("oni", "dmi", "nao", "pdo")}, index=dates)
+    with patch("data.build_dataset.fetch_power", side_effect=fake_fetch):
+        result = build_site("x", {"lat": 10.0, "region": "test"}, 2000, 2000,
+                            None, "nonparametric", indices)
+    for name in ("oni", "dmi", "nao", "pdo"):
+        assert np.isnan(result.loc[0, name])
+        assert result.loc[1, name] == 0.0
+        assert result.loc[3, name] == 2.0

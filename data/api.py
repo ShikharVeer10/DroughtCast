@@ -179,9 +179,12 @@ def prepare_site(site: str, spec: dict[str, Any], daily: pd.DataFrame,
         if variable in monthly:
             monthly[f"lag_{variable}"] = monthly[variable].shift(1)
     monthly = monthly.join(indices, how="left")
-    # 3-month centered ONI at month m contains m+1; use the value centered on m-1.
-    if "oni" in monthly.columns:
-        monthly["oni"] = monthly["oni"].shift(1)
+    # Apply one conservative monthly rule to every teleconnection: the value
+    # attached to month m is the published value from m-1. For centered ONI,
+    # this prevents the three-month mean from reaching month m or later.
+    for name in ("oni", "dmi", "nao", "pdo"):
+        if name in monthly.columns:
+            monthly[name] = monthly[name].shift(1)
     monthly["site"], monthly["region"] = site, spec["region"]
     monthly.index.name = "date"
     return monthly.reset_index()

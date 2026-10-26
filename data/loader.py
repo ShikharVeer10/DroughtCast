@@ -145,7 +145,9 @@ def load_site_table(path: str | Path, features: list[str] | None = None,
             last_spei = rows.iloc[input_idx[-1]][TARGETS].to_dict()
             windows[split]["metadata"].append({"dates": [str(d.date()) for d in dates[input_idx]],
                 "site": str(site), "region": region, "last_observed_spei": last_spei,
-                "target_dates": [str(d.date()) for d in dates[target_idx]]})
+                "target_dates": [str(d.date()) for d in dates[target_idx]],
+                "index_source_dates": [str((d - pd.offsets.MonthBegin(1)).date())
+                                       for d in dates[input_idx]]})
             if residual_heads:
                 windows[split]["last_spei"].append(
                     np.nan_to_num(np.asarray([last_spei[name] for name in TARGETS], dtype=np.float32))

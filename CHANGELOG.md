@@ -1,5 +1,11 @@
 # Changelog
 
+## Phase 1 — Target and leakage fixes (2026-10-26)
+
+- Align ONI, DMI, NAO, and PDO at month *m* to each index's published month *m−1* value; this prevents centered ONI from including month *m* and records source-month provenance for every input window.
+- When SPEIbase files are supplied, validate computed SPEI per site and accumulation scale before replacing targets; `results/speibase_validation.csv` records sample count, correlation, RMSE, and bias.
+- No scientific values or reported performance metrics were changed.
+
 ## Phase 1 — Canonical architecture
 
 - Single model class `DroughtCast` (`MultiScaleForecaster` deprecated alias); removed legacy `DroughtCastModel` / `UncertaintyWeightedMultiTaskLoss` implementations.
