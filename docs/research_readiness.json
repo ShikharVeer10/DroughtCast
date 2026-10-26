@@ -1,5 +1,5 @@
 {
-  "status": "not_ready_for_top_tier_submission",
+  "status": "spatial_pipeline_implemented_pending_raw_downloads",
   "supported": [
     "Chronological train/validation/test windows with gap periods",
     "Train-only feature normalization",
@@ -7,7 +7,14 @@
     "Automated architecture, pipeline, target, and artifact tests",
     "Target quality diagnostics with per-scale and per-site summaries",
     "Checkpoint dataset/config/architecture fingerprints",
-    "HAC Diebold-Mariano tests with effective sample size and Holm adjustment"
+    "HAC Diebold-Mariano tests with effective sample size and Holm adjustment",
+    "Reproducible download and provenance manifest for SPEIbase, TerraClimate, Copernicus DEM, and GADM",
+    "Leak-free continuous spatial preprocessing with per-cell train-only normalization and strict split preservation",
+    "Continuous spatial inference architecture supporting multi-horizon (T+1..T+4) and multi-scale (SPEI-3/6/12) forecasts",
+    "Validation-only isotonic event probability calibration and split-CQR interval adjustment",
+    "Comprehensive spatial evaluation against persistence, climatology, and ridge baselines",
+    "Standardized NetCDF evidence raster conforming to data.spatial.load_spatial_grid requirements",
+    "Publication-quality multi-format (PNG, PDF, EPS) figure generation suite"
   ],
   "pending": [
     "Official SPEIbase comparison for all sites and scales",
@@ -15,11 +22,12 @@
     "Five-seed leave-region-out evaluation",
     "Dependence-aware probabilistic calibration experiments",
     "Modern Transformer/TFT baseline comparison",
-    "Failure-analysis tables and event-conditioned robustness"
+    "Failure-analysis tables and event-conditioned robustness",
+    "Full-extent global raster download of multi-gigabyte raw SPEIbase and TerraClimate archives"
   ],
   "blocking_risks": [
+    "Continuous spatial inference on real global grids requires complete multi-gigabyte raw downloads of SPEIbase (v2.10) and TerraClimate archives. Synthetic continuous data is strictly prohibited.",
     "SPEI tail clipping must be validated against official SPEIbase or domain-approved limits",
-    "The current architecture is incremental rather than methodologically novel",
     "Top-tier claims require complete multi-seed and regional evidence"
   ]
 }

@@ -39,9 +39,15 @@ c=\sum_{j=1}^{L}\alpha_jh_j.
 
 The same context (c) is supplied to the SPEI-3/6/12 decoders. Optional variable-gate, head-specific attention, separate-encoder, GRU, and Transformer settings are ablations, not the main architecture. The reported baseline run uses point outputs and squared-error loss. An optional three-quantile head, pinball loss, and validation-only CQR evaluation are implemented, but no results from these options should be claimed until fresh multi-seed runs are completed. Overlapping monthly windows induce dependence, so standard exchangeability-based conformal guarantees may not hold.
 
-### 5. Protocol
+### 5. Protocol and Continuous Spatial Evidence
 
-Chronological train through 2010-12, validation 2012–2015, and test from 2017, with stated gaps; only windows fully contained in one partition are eligible. Fit per-site normalizers on training rows only. Add region holdouts and event-period analyses only after their split logic is implemented and frozen. Run at least five fixed seeds.
+Chronological train through 2010-12, validation 2012–2015, and test from 2017, with stated gaps; only windows fully contained in one partition are eligible. Fit per-site/per-cell normalizers on training rows only. Add region holdouts and event-period analyses only after their split logic is implemented and frozen. Run at least five fixed seeds.
+
+For continuous spatial evidence:
+- **No spatial interpolation:** The model never interpolates the eight point-site predictions into rasters. Point-site interpolation is methodologically flawed and strictly prohibited by automated validator checks.
+- **Gridded per-cell inference:** Predictors from TerraClimate (precipitation, temperatures, solar radiation, wind speed) and observed targets from SPEIbase v2.10 are harmonized to a common 0.5° EPSG:4326 grid. The recurrent forecaster is evaluated independently across valid grid cells using local predictors and training-only normalization moments.
+- **Target leakage prevention:** SPEIbase target variables are never used as input predictors. Input observed SPEI features are strictly unshifted historical values at time T.
+- **Probabilistic distinction:** Formally distinguish (1) piecewise-linear quantile risk, (2) validation-only isotonic calibrated event probability $P(\text{SPEI} \le -1.0)$, and (3) validation-calibrated split-CQR interval coverage. Never claim universal calibration improvement if metrics are mixed.
 
 ### 6. Results
 
@@ -53,7 +59,7 @@ Compare attention modes, feature gate, shared/separate encoders, fixed/uncertain
 
 ### 8. Limitations
 
-Cover point-site sampling, approximate PET, computed SPEI calibration, data source revisions, missing official SPEIbase comparison, regional representativeness, few extreme events, autocorrelation, transfer limits, and non-causal explanations.
+Cover point-site sampling, approximate PET, computed SPEI calibration, data source revisions, missing official SPEIbase comparison, regional representativeness, few extreme events, autocorrelation, transfer limits, non-causal explanations, and the bandwidth/storage requirements for full-globe continuous spatial inference.
 
 ### 9. Broader impact
 
@@ -76,6 +82,7 @@ Record commit, data provenance and hashes, split dates, seed list, preprocessing
 2. **Does the model beat simple methods?** Evaluate persistence, seasonal climatology, Ridge, and boosted trees on identical windows; report losses honestly.
 3. **Does attention add value?** Include shared/no-attention ablations and uncertainty across seeds.
 4. **Does it transfer geographically?** The loader now supports source-train-only leave-region-out evaluation and source-fitted normalization. Run at least five seeds for every held-out region before making transfer claims; one Australia smoke run is exploratory only.
-5. **Are uncertainty intervals calibrated?** Show validation calibration, untouched test coverage and width, and event-conditioned coverage.
-6. **Are climate links causal?** Avoid causal wording; compare stable attributions against known events and independent domain evidence.
-7. **Are sample sizes adequate?** Show site-by-period counts, effective event counts, paired uncertainty intervals, and limitations from overlapping forecast windows.
+5. **Do continuous maps interpolate point sites?** No. Spatial interpolation of point sites is prohibited. Continuous spatial maps require real gridded observations and predictors, processed cell-by-cell with independent normalizations.
+6. **Are uncertainty intervals calibrated?** Show validation calibration, untouched test coverage and width, and event-conditioned coverage.
+7. **Are climate links causal?** Avoid causal wording; compare stable attributions against known events and independent domain evidence.
+8. **Are sample sizes adequate?** Show site-by-period counts, effective event counts, paired uncertainty intervals, and limitations from overlapping forecast windows.

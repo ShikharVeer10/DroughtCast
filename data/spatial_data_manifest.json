@@ -1,0 +1,164 @@
+{
+  "manifest_version": "1.0.0",
+  "generated_at": "2026-10-26T04:38:46.740675+00:00",
+  "crs": "EPSG:4326",
+  "spatial_resolution_degrees": 0.5,
+  "status": {
+    "speibase_complete": false,
+    "terraclimate_complete": false,
+    "elevation_complete": false,
+    "boundaries_complete": true,
+    "fully_validated": false
+  },
+  "sources": {
+    "observed_drought": {
+      "provider": "SPEIbase (CSIC)",
+      "version": "v2.10",
+      "citation": "Vicente-Serrano et al., 2010; Begueria et al., 2014",
+      "landing_page": "https://spei.csic.es/database.html",
+      "repository_handle": "https://digital.csic.es/handle/10261/364137",
+      "direct_urls": {
+        "spei_3": "https://digital.csic.es/bitstream/10261/364137/3/spei03.nc",
+        "spei_6": "https://digital.csic.es/bitstream/10261/364137/6/spei06.nc",
+        "spei_12": "https://digital.csic.es/bitstream/10261/364137/12/spei12.nc"
+      },
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "spatial_resolution_degrees": 0.5,
+      "temporal_resolution": "monthly",
+      "period": "1901-01 to 2023-12",
+      "variable_name": "spei",
+      "units": "dimensionless (standardized normal quantiles)",
+      "required_scales": [
+        "spei_3",
+        "spei_6",
+        "spei_12"
+      ],
+      "local_verification": {
+        "available": false,
+        "files": {},
+        "missing": [
+          "spei03.nc",
+          "spei06.nc",
+          "spei12.nc"
+        ]
+      }
+    },
+    "climate_predictors": {
+      "provider": "TerraClimate (University of Idaho / Climatology Lab)",
+      "version": "v1.0",
+      "citation": "Abatzoglou et al., 2018 (Scientific Data)",
+      "landing_page": "https://www.climatologylab.org/terraclimate.html",
+      "thredds_catalog": "http://thredds.northwestknowledge.net:8080/thredds/terraclimate_aggregated.html",
+      "direct_url_template": "http://thredds.northwestknowledge.net:8080/thredds/fileServer/TERRACLIMATE_ALL/data/TerraClimate_{variable}_{year}.nc",
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "spatial_resolution_degrees": 0.041666667,
+      "spatial_resolution_km": 4.0,
+      "temporal_resolution": "monthly",
+      "variables": {
+        "ppt": {
+          "name": "precipitation",
+          "units": "mm"
+        },
+        "tmax": {
+          "name": "maximum_2m_temperature",
+          "units": "degC"
+        },
+        "tmin": {
+          "name": "minimum_2m_temperature",
+          "units": "degC"
+        },
+        "srad": {
+          "name": "downward_surface_shortwave_radiation",
+          "units": "W/m^2"
+        },
+        "ws": {
+          "name": "10m_wind_speed",
+          "units": "m/s"
+        },
+        "pet": {
+          "name": "potential_evapotranspiration",
+          "units": "mm"
+        }
+      },
+      "local_verification": {
+        "available": false,
+        "files": {},
+        "missing": [
+          "ppt",
+          "tmax",
+          "tmin",
+          "srad",
+          "ws",
+          "pet"
+        ]
+      }
+    },
+    "elevation": {
+      "provider": "Copernicus DEM GLO-30",
+      "version": "2021_1",
+      "publisher": "European Space Agency (ESA) / Airbus",
+      "landing_page": "https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM",
+      "aws_catalog": "https://copernicus-dem-30m.s3.amazonaws.com/readme.html",
+      "s3_bucket": "s3://copernicus-dem-30m/",
+      "license": "Copernicus WorldDEM-30 Open Access License / Creative Commons",
+      "license_url": "https://spacedata.copernicus.eu/web/cscda/terms-and-conditions",
+      "spatial_resolution_m": 30,
+      "elevation_unit": "meters",
+      "local_verification": {
+        "available": false,
+        "path": "data\\raw\\spatial\\dem\\copernicus_dem_glo30.tif",
+        "missing": [
+          "data\\raw\\spatial\\dem\\copernicus_dem_glo30.tif"
+        ]
+      }
+    },
+    "boundaries": {
+      "provider": "GADM (Database of Global Administrative Areas)",
+      "version": "4.1",
+      "landing_page": "https://gadm.org/",
+      "download_url": "https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gpkg.zip",
+      "country_gpkg_url_template": "https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_{iso3}.gpkg",
+      "license": "Free for academic and non-commercial research use",
+      "license_url": "https://gadm.org/license.html",
+      "local_directory": "data/raw/spatial/gadm",
+      "local_verification": {
+        "available": true,
+        "files": {
+          "AUS.gpkg": {
+            "path": "data\\raw\\spatial\\gadm\\AUS.gpkg",
+            "size_bytes": 91648000,
+            "sha256": "78c9a9fb2037b62bd5d58ab473ac76983757ae5ba04404f5c9283a88487156ac"
+          },
+          "ESP.gpkg": {
+            "path": "data\\raw\\spatial\\gadm\\ESP.gpkg",
+            "size_bytes": 33468416,
+            "sha256": "9986193f86bc9fb0243d234df90e27180c43b2e81e27fd982383366096aa5a61"
+          },
+          "ETH.gpkg": {
+            "path": "data\\raw\\spatial\\gadm\\ETH.gpkg",
+            "size_bytes": 2895872,
+            "sha256": "aff5818b5e5e319b4f9d09298f57b5ffe75d6defdcca6fab412968dd5b319298"
+          },
+          "IND.gpkg": {
+            "path": "data\\raw\\spatial\\gadm\\IND.gpkg",
+            "size_bytes": 51994624,
+            "sha256": "da586d57875ca7326498a87aeb37bb1573b7842f24217b00bc459a878dd1f0ca"
+          },
+          "USA.gpkg": {
+            "path": "data\\raw\\spatial\\gadm\\USA.gpkg",
+            "size_bytes": 112730112,
+            "sha256": "206dd2b3b299ddca4c9a50ff6144623b989c106a04f2a308612e524acaa92bef"
+          },
+          "ZAF.gpkg": {
+            "path": "data\\raw\\spatial\\gadm\\ZAF.gpkg",
+            "size_bytes": 95379456,
+            "sha256": "ddad6ecf96246d7c54842193c0302979053bc13245a04d7b4a134e0d88df005a"
+          }
+        },
+        "count": 6
+      }
+    }
+  }
+}

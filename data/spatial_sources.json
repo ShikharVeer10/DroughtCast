@@ -1,30 +1,101 @@
 {
-  "purpose": "Public-source manifest for reproducible spatial evidence. Downloads are intentionally not bundled.",
-  "boundaries": {
-    "provider": "GADM",
-    "version": "4.1",
-    "url": "https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gpkg.zip",
-    "license_url": "https://gadm.org/license.html"
-  },
-  "elevation": {
-    "provider": "Copernicus DEM GLO-30",
-    "product_url": "https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM",
-    "aws_catalog": "https://copernicus-dem-30m.s3.amazonaws.com/readme.html",
-    "resolution_m": 30
-  },
-  "observed_drought": {
-    "provider": "SPEIbase",
-    "provider_url": "https://spei.csic.es/database.html",
-    "resolution_degrees": 0.5,
-    "required_scales": ["spei_3", "spei_6", "spei_12"]
+  "purpose": "Public-source manifest and specification for reproducible gridded spatial drought evidence.",
+  "spec_version": "2.0.0",
+  "crs": "EPSG:4326",
+  "sources": {
+    "observed_drought": {
+      "provider": "SPEIbase (CSIC)",
+      "version": "v2.10",
+      "citation": "Vicente-Serrano et al., 2010; Begueria et al., 2014",
+      "landing_page": "https://spei.csic.es/database.html",
+      "repository_handle": "https://digital.csic.es/handle/10261/364137",
+      "direct_urls": {
+        "spei_3": "https://digital.csic.es/bitstream/10261/364137/3/spei03.nc",
+        "spei_6": "https://digital.csic.es/bitstream/10261/364137/6/spei06.nc",
+        "spei_12": "https://digital.csic.es/bitstream/10261/364137/12/spei12.nc"
+      },
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "spatial_resolution_degrees": 0.5,
+      "temporal_resolution": "monthly",
+      "period": "1901-01 to 2023-12",
+      "variable_name": "spei",
+      "units": "dimensionless (standardized normal quantiles)",
+      "required_scales": ["spei_3", "spei_6", "spei_12"]
+    },
+    "climate_predictors": {
+      "provider": "TerraClimate (University of Idaho / Climatology Lab)",
+      "version": "v1.0",
+      "citation": "Abatzoglou et al., 2018 (Scientific Data)",
+      "landing_page": "https://www.climatologylab.org/terraclimate.html",
+      "thredds_catalog": "http://thredds.northwestknowledge.net:8080/thredds/terraclimate_aggregated.html",
+      "direct_url_template": "http://thredds.northwestknowledge.net:8080/thredds/fileServer/TERRACLIMATE_ALL/data/TerraClimate_{variable}_{year}.nc",
+      "license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "spatial_resolution_degrees": 0.041666667,
+      "spatial_resolution_km": 4.0,
+      "temporal_resolution": "monthly",
+      "variables": {
+        "ppt": {"name": "precipitation", "units": "mm"},
+        "tmax": {"name": "maximum_2m_temperature", "units": "degC"},
+        "tmin": {"name": "minimum_2m_temperature", "units": "degC"},
+        "srad": {"name": "downward_surface_shortwave_radiation", "units": "W/m^2"},
+        "ws": {"name": "10m_wind_speed", "units": "m/s"},
+        "pet": {"name": "potential_evapotranspiration", "units": "mm"}
+      }
+    },
+    "elevation": {
+      "provider": "Copernicus DEM GLO-30",
+      "version": "2021_1",
+      "publisher": "European Space Agency (ESA) / Airbus",
+      "landing_page": "https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM",
+      "aws_catalog": "https://copernicus-dem-30m.s3.amazonaws.com/readme.html",
+      "s3_bucket": "s3://copernicus-dem-30m/",
+      "license": "Copernicus WorldDEM-30 Open Access License / Creative Commons",
+      "license_url": "https://spacedata.copernicus.eu/web/cscda/terms-and-conditions",
+      "spatial_resolution_m": 30,
+      "elevation_unit": "meters"
+    },
+    "boundaries": {
+      "provider": "GADM (Database of Global Administrative Areas)",
+      "version": "4.1",
+      "landing_page": "https://gadm.org/",
+      "download_url": "https://geodata.ucdavis.edu/gadm/gadm4.1/gadm_410-gpkg.zip",
+      "country_gpkg_url_template": "https://geodata.ucdavis.edu/gadm/gadm4.1/gpkg/gadm41_{iso3}.gpkg",
+      "license": "Free for academic and non-commercial research use",
+      "license_url": "https://gadm.org/license.html",
+      "local_directory": "data/raw/spatial/gadm"
+    },
+    "boundaries_fallback": {
+      "provider": "Natural Earth",
+      "version": "5.1.0",
+      "landing_page": "https://www.naturalearthdata.com/",
+      "download_url": "https://naciscdn.org/naturalearth/110m/cultural/ne_110m_admin_0_countries.zip",
+      "license": "Public Domain (CC0)",
+      "license_url": "https://www.naturalearthdata.com/about/terms-of-use/"
+    }
   },
   "required_local_product": {
-    "format": "NetCDF",
+    "format": "NetCDF-4",
+    "crs": "EPSG:4326",
     "coordinates": ["time", "lat", "lon"],
-    "variables": [
+    "required_variables": [
+      "elevation",
       "obs_spei_3", "obs_spei_6", "obs_spei_12",
-      "pred_spei_3", "pred_spei_6", "pred_spei_12"
+      "pred_spei_3", "pred_spei_6", "pred_spei_12",
+      "q10_spei_3", "q50_spei_3", "q90_spei_3",
+      "q10_spei_6", "q50_spei_6", "q90_spei_6",
+      "q10_spei_12", "q50_spei_12", "q90_spei_12",
+      "prob_spei_3", "prob_spei_6", "prob_spei_12",
+      "cqr_lower_spei_6", "cqr_upper_spei_6",
+      "error_spei_3", "error_spei_6", "error_spei_12",
+      "valid_cell_mask"
     ],
-    "note": "Predictions must be generated by the model on the same grid; point-site interpolation is prohibited."
+    "spatial_resolution_degrees": 0.5,
+    "prohibitions": [
+      "Interpolating 8 point-site predictions into rasters is strictly prohibited.",
+      "Fabricating synthetic spatial predictions, metrics, or elevation is prohibited.",
+      "Target leakage from SPEIbase to predictors is strictly prohibited."
+    ]
   }
 }

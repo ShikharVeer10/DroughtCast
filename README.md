@@ -69,25 +69,37 @@ python make_figures.py
 
 Figures read only real artefacts under `results/` and fail if they are missing. Do not invent metrics; print tables from actual runs only. `base_diagram.yaml` is the reference model in every results table.
 
-## Gridded spatial evidence
+## Continuous Spatial Evidence Pipeline
 
-The repository now includes a strict spatial-evidence path for public gridded
-products. Source provenance is recorded in `data/spatial_sources.json`.
-Download and harmonize public boundaries, Copernicus DEM, and SPEIbase (or
-another documented gridded target) before producing a continuous map. A valid
-NetCDF evidence product must contain `time`, `lat`, `lon`, and matching
-`obs_spei_3/6/12` plus `pred_spei_3/6/12` variables. Run:
+DroughtCast includes a continuous gridded spatial evidence pipeline for climate-conference publication quality. It generates continuous drought fields with observed SPEI, predicted SPEI, drought-event probability, uncertainty, error, and elevation.
+
+### Critical Integrity Protocol
+- **No point-site interpolation:** Interpolating the eight point-site predictions into rasters is strictly prohibited and rejected by automated tests.
+- **Gridded per-cell inference:** Predictors from TerraClimate (precipitation, temperatures, solar radiation, wind speed) and observed targets from SPEIbase v2.10 are harmonized to a common 0.5° EPSG:4326 grid. The recurrent forecaster is evaluated independently across valid grid cells using local predictors and training-only normalization moments.
+- **Leakage prevention:** SPEIbase target variables are never used as input predictors. Input observed SPEI features are strictly unshifted historical values at forecast origin T.
+- **Probabilistic calibration:** Formally distinguishes (1) piecewise-linear quantile risk, (2) validation-only isotonic calibrated event probability $P(\text{SPEI} \le -1.0)$, and (3) validation-calibrated split-CQR interval coverage.
+
+### Spatial Pipeline Workflow
 
 ```powershell
-python -m experiments.validate_spatial_evidence data/spatial_grid.nc
-python -m experiments.plot_spatial_evidence data/spatial_grid.nc --scale spei_6
-```
+# 1. Verify raw spatial sources and generate machine-readable manifest
+python -m data.spatial_download
 
-The validator refuses missing or incompatible fields and reports common-grid
-RMSE, MAE, bias, POD, FAR, and CSI. It does not interpolate the eight point
-sites into a raster. Spatial metrics may be reported as generalization evidence
-only when the grid test dates and target construction are held out from model
-training.
+# 2. Harmonize raw grids to 0.5° EPSG:4326 (when raw downloads are present)
+python -m data.spatial_preprocess --speibase-dir data/raw/spatial/speibase --terraclimate-dir data/raw/spatial/terraclimate
+
+# 3. Execute continuous spatial pipeline (inference, calibration, NetCDF evidence product)
+python -m experiments.run_spatial_pipeline --config configs/spatial_config.yaml
+
+# 4. Evaluate against baselines (persistence, climatology, Ridge) with bootstrap CIs
+python -m experiments.evaluate_spatial_pipeline results/spatial_pipeline/spatial_evidence.nc
+
+# 5. Generate publication figures in PNG, PDF, and EPS formats
+python -m experiments.plot_spatial_pipeline results/spatial_pipeline/spatial_evidence.nc
+
+# 6. Export paper tables
+python -m experiments.generate_spatial_tables results/spatial_pipeline/tables/spatial_evaluation.json
+```
 
 ## Assumptions
 

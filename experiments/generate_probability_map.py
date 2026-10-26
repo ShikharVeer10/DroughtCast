@@ -3,6 +3,9 @@
 The lower-tail risk is interpolated from the trained 0.1/0.5/0.9 quantiles.
 The conformal component calibrates interval coverage, not the event
 probability itself; the figure labels this distinction explicitly.
+
+An optional calibrated prediction CSV replaces the interpolated risk values
+with validation-only isotonic event probabilities for the selected checkpoint.
 """
 from __future__ import annotations
 
@@ -48,6 +51,10 @@ def main() -> None:
     parser.add_argument("--scale", choices=SCALES, default="spei_6")
     parser.add_argument("--threshold", type=float, default=-1.0)
     parser.add_argument("--date", help="Target date; defaults to latest date complete for all leads")
+    parser.add_argument(
+        "--calibrated-predictions",
+        help="CSV produced by evaluate_event_calibration for this checkpoint and threshold",
+    )
     args = parser.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -87,6 +94,39 @@ def main() -> None:
                     "lower": float(lower[i, lead]), "upper": float(upper[i, lead]),
                 })
     frame = pd.DataFrame(rows)
+    probability_definition = (
+        "piecewise-linear interpolation of trained 0.1, 0.5, 0.9 quantiles"
+    )
+    calibrated = False
+    if args.calibrated_predictions:
+        calibrated_frame = pd.read_csv(args.calibrated_predictions)
+        required = {
+            "site", "date", "lead", "scale", "calibrated_probability",
+        }
+        missing = required.difference(calibrated_frame.columns)
+        if missing:
+            raise ValueError(
+                f"Calibrated prediction CSV is missing columns: {sorted(missing)}"
+            )
+        calibrated_frame = calibrated_frame[
+            (calibrated_frame["scale"] == args.scale)
+            & (calibrated_frame["lead"].astype(int).between(1, test_q.shape[1]))
+        ][["site", "date", "lead", "calibrated_probability"]]
+        frame = frame.merge(
+            calibrated_frame,
+            on=["site", "date", "lead"],
+            how="left",
+            validate="one_to_one",
+        )
+        if frame["calibrated_probability"].isna().any():
+            raise ValueError(
+                "Calibrated predictions do not cover every map forecast row"
+            )
+        frame["risk"] = frame["calibrated_probability"].astype(float).clip(0.0, 1.0)
+        calibrated = True
+        probability_definition = (
+            "validation-only isotonic calibration of quantile-derived event risk"
+        )
     complete = frame.groupby("date")["lead"].nunique()
     chosen_date = args.date or str(complete.loc[complete == 4].index.max())
     snapshot = frame[frame["date"] == chosen_date]
@@ -110,10 +150,25 @@ def main() -> None:
         ax.set_xlabel("Longitude (degrees)")
         ax.set_ylabel("Latitude (degrees)")
         ax.grid(alpha=.25)
-    fig.colorbar(sc, ax=axes, label=f"Quantile-derived P(SPEI ≤ {args.threshold:.1f})")
+    fig.colorbar(
+        sc,
+        ax=axes,
+        label=(
+            f"Calibrated P(SPEI ≤ {args.threshold:.1f})"
+            if calibrated
+            else f"Quantile-derived P(SPEI ≤ {args.threshold:.1f})"
+        ),
+    )
     fig.suptitle(
         f"Probabilistic site forecast: {args.scale.upper().replace('_', '-')} drought risk\n"
-        "Colors and sizes use quantile interpolation; 80% intervals are CQR-calibrated",
+        +
+        (
+            "Colors and sizes use validation-calibrated event probability; "
+            "80% intervals are CQR-calibrated"
+            if calibrated
+            else
+            "Colors and sizes use quantile interpolation; 80% intervals are CQR-calibrated"
+        ),
         y=.99)
     fig.tight_layout()
     out = Path(args.output_dir)
@@ -133,11 +188,13 @@ def main() -> None:
         "checkpoint": args.checkpoint, "interval_method": "validation-only split CQR",
         "nominal_interval_coverage": 0.8,
         "test_interval_metrics": coverage,
-        "probability_definition": "piecewise-linear interpolation of trained 0.1, 0.5, 0.9 quantiles",
-        "probability_calibration_claim": False,
+        "probability_definition": probability_definition,
+        "probability_calibration_claim": calibrated,
         "limitation": "CQR calibrates interval coverage, not event-probability calibration.",
     }
-    (out / "probability_map_report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
+    (out / f"probability_map_report_{args.scale}.json").write_text(
+        json.dumps(report, indent=2), encoding="utf-8"
+    )
     print(json.dumps(report, indent=2))
 
 

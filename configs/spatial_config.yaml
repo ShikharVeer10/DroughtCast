@@ -1,0 +1,72 @@
+# Spatial Continuous SPEI Forecasting Configuration
+# DroughtCast gridded spatial evidence pipeline
+experiment:
+  name: "DroughtCast continuous spatial SPEI forecasting"
+  seed: 42
+
+spatial:
+  speibase_dir: "data/raw/spatial/speibase"
+  terraclimate_dir: "data/raw/spatial/terraclimate"
+  dem_path: "data/raw/spatial/dem/copernicus_dem_glo30.tif"
+  boundaries_dir: "data/raw/spatial/gadm"
+  harmonized_path: "data/spatial_harmonized.nc"
+  output_dir: "results/spatial_pipeline"
+
+  grid:
+    crs: "EPSG:4326"
+    resolution_deg: 0.5
+    # Default target extent (covers South Asia benchmark region or full extent)
+    lat_min: 5.0
+    lat_max: 38.0
+    lon_min: 65.0
+    lon_max: 100.0
+
+  temporal:
+    train_end: "2010-12-01"
+    val_start: "2012-01-01"
+    val_end: "2015-12-01"
+    test_start: "2017-01-01"
+
+  # Geographic holdout region (untouched during train/val)
+  holdout_region:
+    enabled: true
+    name: "peninsular_india"
+    lat_min: 8.0
+    lat_max: 20.0
+    lon_min: 73.0
+    lon_max: 85.0
+
+data:
+  features: ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN", "oni", "dmi", "nao", "pdo", "spei_3_obs", "spei_6_obs", "spei_12_obs"]
+  terraclimate_feature_map:
+    ppt: "PRECTOTCORR"
+    tmax: "T2M_MAX"
+    tmin: "T2M_MIN"
+    srad: "ALLSKY_SFC_SW_DWN"
+    ws: "WS10M"
+  seq_len: 6
+  forecast_steps: 4
+
+model:
+  input_dim: 12
+  hidden_dim_1: 64
+  hidden_dim_2: 32
+  dropout: 0.2
+  encoder: "lstm"
+  attention: "shared"
+  heads: "direct"
+  quantiles: [0.1, 0.5, 0.9]
+  static_context: false
+  use_cascaded_decoder: false
+
+training:
+  batch_size: 128
+  epochs: 50
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  early_stopping_patience: 10
+  lr_patience: 5
+  loss: "mse"
+  extreme_weight: 1.0
+  extreme_threshold: -1.5
+  checkpoint_dir: "checkpoints/spatial"
