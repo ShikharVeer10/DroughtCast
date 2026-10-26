@@ -21,6 +21,8 @@ The canonical configuration is [`configs/base_diagram.yaml`](configs/base_diagra
 
 Chronological windows retain the train period through 2010-12, validation 2012-01 through 2015-12, and test from 2017-01. The intervening gaps are intentionally excluded. Feature normalization and SPEI calibration use training data only.
 
+Training and evaluation require dataset metadata schema version 2. Rebuild older local datasets before running either command. Paper figures also require a current run manifest so stale metrics are not plotted as current evidence.
+
 ```powershell
 python -m data.build_dataset --start 1981 --end 2024
 python train.py --config configs/base_diagram.yaml

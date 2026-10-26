@@ -92,7 +92,7 @@ def pet_daily_aggregate(daily: pd.DataFrame, latitude: float) -> pd.DataFrame:
     tmean = daily["T2M"].astype(float)
     trange = (daily["T2M_MAX"].astype(float) - daily["T2M_MIN"].astype(float)).clip(lower=0)
     phi = np.deg2rad(latitude)
-    doy = idx.dayofyear.to_numpy()
+    doy = idx.day_of_year.to_numpy()
     dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365.0)
     delta = 0.409 * np.sin(2 * np.pi * doy / 365.0 - 1.39)
     ws = np.arccos(np.clip(-np.tan(phi) * np.tan(delta), -1, 1))
@@ -230,6 +230,15 @@ def build(request: BuildRequest):
         raise HTTPException(status_code=500, detail=f"Prepared data missing training features: {sorted(missing_features)}")
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     output.to_csv(OUTPUT, index=False)
+    (OUTPUT.parent / "dataset_metadata.json").write_text(json.dumps({
+        "schema_version": 2,
+        "source": "NASA POWER daily point; NOAA teleconnection indices",
+        "period": [int(request.start), int(request.end)],
+        "spei_method": request.spei_method,
+        "spei_calibration_period": [1981, "2010-12-01"],
+        "index_alignment": "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later",
+        "sites": {name: SITES[name] for name in request.sites},
+    }, indent=2), encoding="utf-8")
     return {"status": "ok", "output": str(OUTPUT), "rows": len(output),
             "sites": request.sites, "parameters": PARAMETERS,
             "date_range": [str(start_date.date()), str(end_date.date())],

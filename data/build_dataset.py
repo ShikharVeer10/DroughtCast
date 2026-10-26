@@ -116,7 +116,7 @@ def fetch_indices(start: str, end: str, cache: Path) -> pd.DataFrame:
             text = response.text
             path.write_text(text, encoding="utf-8")
         columns.append(_parse_noaa_text(name, text))
-    index = pd.concat(columns, axis=1).sort_index()
+    index = pd.concat(columns, axis=1, sort=True).sort_index()
     return index.loc[start:end]
 
 
@@ -124,7 +124,7 @@ def mid_month_doy(index: pd.DatetimeIndex) -> np.ndarray:
     """Day-of-year at mid-month (not the 1st) for monthly Hargreaves Ra."""
     days = index.days_in_month.to_numpy(dtype=float)
     mid = index + pd.to_timedelta((days - 1.0) / 2.0, unit="D")
-    return mid.dayofyear.to_numpy(dtype=float)
+    return mid.day_of_year.to_numpy(dtype=float)
 
 
 def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
@@ -328,11 +328,23 @@ def main() -> None:
     data = pd.concat([build_site(name, spec, args.start, args.end, Path(args.cache), args.spei_method, indices)
                       for name, spec in sites.items()], ignore_index=True)
     if args.speibase:
-        from data.validate_speibase import compare_netcdf
+        from data.validate_speibase import compare_netcdf, speibase_points
         validation = compare_netcdf(data, args.speibase, args.speibase_variable, sites)
         validation_path = Path("results/speibase_validation.csv")
         validation_path.parent.mkdir(parents=True, exist_ok=True)
         validation.to_csv(validation_path, index=False)
+        points = data[["site", "date", "spei_3", "spei_6", "spei_12"]].merge(
+            speibase_points(args.speibase, args.speibase_variable, sites),
+            on=["site", "date"], how="inner", suffixes=("_computed", "_speibase"),
+        )
+        point_rows = []
+        for scale in (3, 6, 12):
+            point_rows.append(points[["site", "date", f"spei_{scale}_computed", f"spei_{scale}_speibase"]]
+                .rename(columns={f"spei_{scale}_computed": "computed_spei",
+                                 f"spei_{scale}_speibase": "speibase_spei"})
+                .assign(scale=scale))
+        pd.concat(point_rows, ignore_index=True).to_csv(
+            Path("results/speibase_validation_points.csv"), index=False)
         data = ingest_speibase(data, args.speibase, sites, args.speibase_variable)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -343,6 +355,7 @@ def main() -> None:
         json.dumps(quality, indent=2, allow_nan=True), encoding="utf-8"
     )
     (output.parent / "dataset_metadata.json").write_text(json.dumps({
+        "schema_version": 2,
         "source": "NASA POWER monthly point; NOAA PSL teleconnection indices",
         "period": [args.start, args.end], "spei_method": args.spei_method,
         "spei_calibration_period": [args.start, "2010-12-01"],

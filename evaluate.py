@@ -5,10 +5,11 @@ import warnings
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 
-from data.loader import load_site_table
+from data.loader import load_site_table, validate_dataset_protocol
 from evaluation.baselines import fit_classical, persistence, seasonal_predictions
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import validate_checkpoint_metadata
@@ -70,6 +71,7 @@ def main():
     parser.add_argument("--holdout-region", action="append", default=[])
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    dataset_protocol = validate_dataset_protocol()
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
         cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
         args.holdout_region, cfg["data"].get("site_filter"),
@@ -136,6 +138,26 @@ def main():
 
     pers_preds = persistence(test.metadata, cfg["data"]["forecast_steps"])
     climatology_preds = seasonal_predictions(train, test)
+    site_skill_rows = []
+    site_names = np.asarray([m["site"] for m in test.metadata])
+    for scale_idx, scale_name in enumerate(SCALES):
+        for site in sorted(set(site_names)):
+            rows = site_names == site
+            valid = rows & mask[:, scale_idx, -1]
+            if not valid.any():
+                continue
+            site_skill_rows.append({
+                "site": site, "scale": scale_name,
+                "latitude": cfg.get("sites", {}).get(site, {}).get("lat"),
+                "longitude": cfg.get("sites", {}).get(site, {}).get("lon"),
+                "skill_vs_persistence": skill_score_persistence(
+                    model_array[valid, scale_idx, -1], targets[valid, scale_idx, -1],
+                    pers_preds[valid, scale_idx, -1]),
+                "n": int(valid.sum()),
+            })
+    site_skill_path = Path("results/site_skill_t4.csv")
+    site_skill_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(site_skill_rows).to_csv(site_skill_path, index=False)
 
     baseline_predictions = {
         "persistence": pers_preds,
@@ -247,6 +269,8 @@ def main():
         result["p_value_holm"] = adjusted
 
     report = {"seed": args.seed, "checkpoint": args.checkpoint, "holdout_regions": args.holdout_region,
+              "dataset_protocol": {"schema_version": dataset_protocol["schema_version"],
+                                   "index_alignment": dataset_protocol["index_alignment"]},
               "test_samples": len(test),
               "unique_target_months": len({
                   m["target_dates"][0][:7] for m in test.metadata
@@ -257,6 +281,16 @@ def main():
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, allow_nan=True), encoding="utf-8")
+    evaluation_manifest = json.dumps({
+        "protocol_version": 1,
+        "dataset_schema_version": dataset_protocol["schema_version"],
+        "index_alignment": dataset_protocol["index_alignment"],
+        "config": args.config,
+        "seed": args.seed,
+        "evaluation_report": str(output),
+    }, indent=2)
+    (output.parent / "evaluation_manifest.json").write_text(evaluation_manifest, encoding="utf-8")
+    (Path("results") / "evaluation_manifest.json").write_text(evaluation_manifest, encoding="utf-8")
     print(f"Saved evaluation metrics to {output}")
 
 

@@ -15,6 +15,24 @@ from data.preprocessing import ClimateNormalizer
 TARGETS = ["spei_3", "spei_6", "spei_12"]
 DEFAULT_FEATURES = ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN",
                    "oni", "dmi", "nao", "pdo", "spei_3_obs", "spei_6_obs", "spei_12_obs"]
+DATASET_PROTOCOL_VERSION = 2
+INDEX_ALIGNMENT = "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later"
+
+
+def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json") -> dict:
+    """Reject datasets built before the current leakage-alignment protocol."""
+    metadata_path = Path(path)
+    if not metadata_path.is_file():
+        raise FileNotFoundError(
+            f"Dataset provenance is missing at {metadata_path}. Rebuild the monthly dataset with data/build_dataset.py."
+        )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if metadata.get("schema_version") != DATASET_PROTOCOL_VERSION or metadata.get("index_alignment") != INDEX_ALIGNMENT:
+        raise RuntimeError(
+            f"Dataset at {metadata_path} predates the current teleconnection alignment. "
+            "Rebuild it with data/build_dataset.py before training or evaluation."
+        )
+    return metadata
 
 
 def split_for_date(date: pd.Timestamp) -> str | None:
@@ -145,6 +163,7 @@ def load_site_table(path: str | Path, features: list[str] | None = None,
             last_spei = rows.iloc[input_idx[-1]][TARGETS].to_dict()
             windows[split]["metadata"].append({"dates": [str(d.date()) for d in dates[input_idx]],
                 "site": str(site), "region": region, "last_observed_spei": last_spei,
+                "spei_history": rows.iloc[input_idx][TARGETS].astype(float).values.tolist(),
                 "target_dates": [str(d.date()) for d in dates[target_idx]],
                 "index_source_dates": [str((d - pd.offsets.MonthBegin(1)).date())
                                        for d in dates[input_idx]]})

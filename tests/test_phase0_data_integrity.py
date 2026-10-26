@@ -129,6 +129,8 @@ def test_window_spei_no_target_leakage(tmp_path):
             assert all(d <= last_input for d in input_dates)
             assert all(d > last_input for d in target_dates)
             assert all(d < min(target_dates) for d in index_source_dates)
+            assert len(meta["spei_history"]) == len(input_dates)
+            assert all(len(row) == 3 for row in meta["spei_history"])
 
 
 def test_all_monthly_indices_are_aligned_to_previous_month():

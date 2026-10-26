@@ -8,7 +8,7 @@ import torch
 import yaml
 from torch.utils.data import DataLoader
 
-from data.loader import load_site_table
+from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import artifact_metadata
 
@@ -133,6 +133,7 @@ def main():
     seed_everything(seed)
     if not Path(cfg["data"]["path"]).exists():
         raise FileNotFoundError(f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first.")
+    validate_dataset_protocol()
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
         cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
         args.holdout_region, cfg["data"].get("site_filter"),

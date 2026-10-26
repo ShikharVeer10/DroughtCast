@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from data.loader import validate_dataset_protocol
 
 SCALES = ["spei_3", "spei_6", "spei_12"]
 LEADS = ["T+1", "T+2", "T+3", "T+4"]
@@ -23,6 +24,18 @@ def main():
     if not reports:
         print("No seed reports found.")
         return
+
+    dataset_protocol = validate_dataset_protocol()
+    expected_protocol = {"schema_version": dataset_protocol["schema_version"],
+                         "index_alignment": dataset_protocol["index_alignment"]}
+    stale_reports = [str(report["seed"]) for _, report in reports
+                     if report.get("dataset_protocol") != expected_protocol]
+    if stale_reports:
+        raise RuntimeError(
+            "Seed reports lack the current dataset protocol and cannot be summarized: "
+            + ", ".join(stale_reports)
+            + ". Re-run evaluation for each seed after rebuilding the dataset."
+        )
 
     methods = list(reports[0][1]["methods"].keys())
     records = []
@@ -85,6 +98,13 @@ def main():
 
     summary_df = pd.DataFrame(summary_rows)
     summary_df.to_csv(out_dir / "summary.csv", index=False)
+    (Path("results") / "run_manifest.json").write_text(json.dumps({
+        "protocol_version": 1,
+        "dataset_schema_version": dataset_protocol["schema_version"],
+        "index_alignment": dataset_protocol["index_alignment"],
+        "seeds": [int(seed) for seed, _ in reports],
+        "methods": methods,
+    }, indent=2), encoding="utf-8")
 
     print("\n================ MULTI-SEED BENCHMARK SUMMARY (MEAN +/- STD) ================")
     pivot = summary_df.pivot(index=["scale", "lead"], columns="method", values=["rmse_mean", "kge_mean", "skill_mean"])

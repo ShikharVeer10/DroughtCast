@@ -11,6 +11,7 @@
 - GRU and TCN baselines now average five declared seeds and select checkpoints by validation MSE; both retain equal zero-search tuning budgets alongside fixed classical baseline settings.
 - Evaluation rejects exact prediction duplicates, reports a site-year block bootstrap as the primary paired comparison, labels pooled Wilcoxon secondary, enforces DM-HAC bandwidth at least the SPEI accumulation scale, and reports effective sample size and independent drought episodes.
 - Probabilistic evaluation reports validation and test coverage; CRPS remains explicitly `crps_approx` for the configured three quantiles. CQR corrections are applied without silent clipping and nonfinite corrections raise an error.
+- VAR now forecasts from the actual last k_ar monthly observations in each input window; it no longer repeats the endpoint observation to pad history.
 - No existing results were regenerated or reinterpreted.
 
 ## Phase 3 — Code consistency (2026-10-26)
@@ -18,6 +19,13 @@
 - The only model implementation is `MultiScaleForecaster`, publicly aliased as `DroughtCast`; obsolete model-name aliases were removed.
 - Rewrote README around the six-phase diagram, corrected accumulation-scale and forecast-horizon terminology, chronology and regeneration commands. Existing strict config validation and base diagram conformance checks remain in force.
 - No scientific values or reported performance metrics were changed.
+
+## Phase 4 — Paper figures (2026-10-26)
+
+- Added a shared serif/Okabe-Ito style, config-driven F1 architecture diagram, vector PDF and 300-dpi PNG export, and exact plotted-data CSV.
+- Added `make_paper_figures.py --check`; F2–F10 are blocked by missing or inadequate current result exports. Existing legacy results were not used to fabricate required five-seed, quantile, bootstrap, SPEIbase, interpretability, or regional evidence.
+- Added schema-v2 dataset provenance gates for training/evaluation and a current run manifest for multi-seed summaries. Evaluation exports per-site T+4 skill; SPEIbase scatter pairs are saved when reference files are supplied.
+- Rebuilt the cached monthly dataset offline under schema v2 and verified seed-42 base-diagram training/evaluation. The complete baseline pass was stopped after several minutes of CPU-bound GRU/TCN seed fitting; no partial evaluation table is treated as a completed result.
 
 ## Phase 1 — Canonical architecture
 

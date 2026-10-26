@@ -37,6 +37,7 @@ data/raw/
 data/monthly_sites.csv
 data/meta.json
 data/dataset_metadata.json
+data/target_quality.json
 
 # Local Evaluation & Figure Run Artifacts
 results/

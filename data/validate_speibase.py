@@ -73,6 +73,13 @@ def extract_reference(netcdf_path: Path, variable: str, scale: int,
 
 def compare_netcdf(computed: pd.DataFrame, directory: Path, variable: str | None = None,
                    sites: dict | None = None) -> pd.DataFrame:
+    ref = speibase_points(directory, variable, sites)
+    return compare(computed, ref)
+
+
+def speibase_points(directory: Path, variable: str | None = None,
+                    sites: dict | None = None) -> pd.DataFrame:
+    """Load per-site monthly reference values for scale-wise scatter plots."""
     references = []
     for scale in (3, 6, 12):
         path = directory / f"spei{scale:02d}.nc"
@@ -82,7 +89,7 @@ def compare_netcdf(computed: pd.DataFrame, directory: Path, variable: str | None
     ref = references[0]
     for other in references[1:]:
         ref = ref.merge(other, on=["site", "date"], how="outer", validate="one_to_one")
-    return compare(computed, ref)
+    return ref
 
 
 if __name__ == "__main__":

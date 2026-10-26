@@ -208,14 +208,12 @@ def fit_var_baseline(train_dataset, test_dataset, maxlags=3):
         k_ar = int(results.k_ar)
         for idx in test_idx:
             # Pass the last k_ar observations required by statsmodels forecast().
-            history = np.array(
-                [[test_dataset.metadata[idx]["last_observed_spei"][f"spei_{s}"] for s in (3, 6, 12)]],
-                dtype=float,
-            )
-            if k_ar > 1:
-                # Repeat the available last observation to form a length-k_ar history
-                # when only the window endpoint SPEI is stored in metadata.
-                history = np.repeat(history, k_ar, axis=0)
+            history = np.asarray(test_dataset.metadata[idx]["spei_history"], dtype=float)
+            if history.ndim != 2 or history.shape[1] != 3 or len(history) < k_ar:
+                raise RuntimeError(
+                    f"VAR needs the last {k_ar} observed months for site={site}, window={idx}; "
+                    f"received history shape {history.shape}"
+                )
             forecast = results.forecast(history[-k_ar:], steps=y_test.shape[2])
             pred[idx] = forecast.T
     if np.isnan(pred).all():
