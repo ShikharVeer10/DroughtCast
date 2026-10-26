@@ -1,4 +1,4 @@
-.PHONY: results figures paper-assets probability-table
+.PHONY: results figures paper-assets probability-table probability-audit calibration-compare
 
 results:
 	python experiments/run_all.py --seeds 42 101 2024 2025 2026
@@ -12,3 +12,9 @@ paper-assets:
 
 probability-table:
 	python experiments/export_probability_table.py
+
+probability-audit:
+	python experiments/audit_probability_outputs.py
+
+calibration-compare:
+	python -m experiments.compare_probability_calibration

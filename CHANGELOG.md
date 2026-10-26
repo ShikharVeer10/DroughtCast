@@ -50,3 +50,12 @@ Any previously reported metrics trained on `lag_spei_*`, unshifted ONI, or the o
 - Added a reproducible exporter that formats the real all-site inference CSV as a 24-row site-by-accumulation-scale paper table with T+1..T+4 decimal-probability columns, LaTeX booktabs output, and a companion CSV. The current export contains eight configured sites and probabilities for SPEI <= -1.0; forecast months and threshold are read from the input file.
 - Removed the unused legacy `make_figures.py`; `make_paper_figures.py` is the project's referenced figure entry point. Restored the shared figure-style module required by that entry point and its QA checks.
 - No probabilities or evaluation metrics were edited by hand; table values are read directly from `results/inference_probabilities_seed_42.csv`.
+
+## Codebase cleanup (2026-10-26)
+
+- Removed unreferenced duplicate dataset builder `data/dataset_build.py`; `data/build_dataset.py` is the canonical builder used by training, API processing, tests, and orchestration.
+- Removed the superseded `experiments/generate_publication_figures.py`; `make_paper_figures.py` is the active paper-asset entry point.
+- Removed unreferenced legacy `utils/visualisation.py` and `experiments/plot_probability_reliability.py`; the active paper and calibration generators provide those workflows.
+- Preserved all raw-data interfaces, evaluation scripts, spatial workflows, tests, checkpoints, and generated results required for reproducibility.
+- Added `experiments/audit_probability_outputs.py` to verify dataset/checkpoint provenance, duplicate rows, quantile ordering, and calibration resolution before probabilities are reported.
+- Added `experiments/compare_probability_calibration.py`, which fits raw, isotonic, and logistic calibrators on validation data only and scores them on the untouched test period. The current seed-42 comparison is saved under `results/probability_calibration/calibration_comparison_seed_42.csv`; isotonic remains the reported method because logistic is worse on held-out mean Brier score and ECE.

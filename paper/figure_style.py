@@ -10,6 +10,7 @@ from PIL import Image, ImageChops
 
 SINGLE_COLUMN_IN = 3.5
 DOUBLE_COLUMN_IN = 7.16
+BODY_PT = 8
 OKABE_ITO = {
     "orange": "#E69F00", "sky_blue": "#56B4E9", "bluish_green": "#009E73",
     "yellow": "#F0E442", "blue": "#0072B2", "vermillion": "#D55E00",
@@ -43,7 +44,7 @@ def add_panel_labels(axes, labels=None) -> None:
                 fontsize=8, fontweight="bold", clip_on=False)
 
 
-def save_figure(fig, path, width: str = "single", dpi: int = 600) -> dict[str, str]:
+def save_figure(fig, path, width: str = "single", dpi: int = 600, kind: str = "line") -> dict[str, str]:
     """Write fixed-canvas vector PDF and high-resolution opaque PNG."""
     expected = SINGLE_COLUMN_IN if width == "single" else DOUBLE_COLUMN_IN if width == "double" else None
     if expected is None:
@@ -60,7 +61,8 @@ def save_figure(fig, path, width: str = "single", dpi: int = 600) -> dict[str, s
     return {"pdf": str(pdf), "png": str(png)}
 
 
-def audit_figure(fig, pdf_path, png_path, width: str = "single", dpi: int = 600) -> dict:
+def audit_figure(fig, pdf_path, png_path, width: str = "single", dpi: int = 600,
+                 expected_geographic_aspect: float | None = None) -> dict:
     expected = SINGLE_COLUMN_IN if width == "single" else DOUBLE_COLUMN_IN
     errors: list[str] = []
     if abs(fig.get_figwidth() - expected) > 0.02:

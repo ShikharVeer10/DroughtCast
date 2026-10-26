@@ -86,6 +86,24 @@ def render_latex(table: pd.DataFrame, target_months: list[str], threshold: float
     return "\n".join(lines) + "\n"
 
 
+def render_terminal(table: pd.DataFrame, threshold: float) -> str:
+    """Render a fixed-width table so terminals cannot wrap or hide columns."""
+    columns = list(table.columns)
+    widths = {column: max(len(column), *(len(f"{float(value):.4f}") for value in table[column]))
+              if column not in {"site", "scale"} else max(len(column), *(len(str(value)) for value in table[column]))
+              for column in columns}
+    header = " | ".join(column.ljust(widths[column]) for column in columns)
+    rule = "-+-".join("-" * widths[column] for column in columns)
+    rows = [header, rule]
+    for row in table.itertuples(index=False, name=None):
+        cells = []
+        for column, value in zip(columns, row):
+            text = str(value) if column in {"site", "scale"} else f"{float(value):.4f}"
+            cells.append(text.ljust(widths[column]))
+        rows.append(" | ".join(cells))
+    return "\n".join(rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=Path("results/inference_probabilities_seed_42.csv"))
@@ -97,11 +115,9 @@ def main() -> None:
     args.csv_out.parent.mkdir(parents=True, exist_ok=True)
     args.latex_out.write_text(render_latex(table, months, threshold), encoding="utf-8")
     table.to_csv(args.csv_out, index=False, float_format="%.8f")
-    display = table.copy()
-    for column in display.columns[2:]:
-        display[column] = display[column].map(lambda value: f"{value:.4f}")
-    print("Calibrated drought probability as decimal values in [0, 1], by site, scale, and lead")
-    print(display.to_string(index=False))
+    print(f"Event: SPEI <= {threshold:g} | Values are calibrated probabilities in [0, 1]")
+    print("Each row is one configured site and accumulation scale; each lead includes its target month.")
+    print(render_terminal(table, threshold))
     print(f"\nLaTeX table: {args.latex_out}")
     print(f"Machine-readable table: {args.csv_out}")
 

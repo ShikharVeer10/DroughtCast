@@ -47,6 +47,22 @@ python experiments/export_probability_table.py
 
 This prints decimal probabilities (0 to 1) in the terminal and writes `paper/latex/probability_table.tex` plus `paper/latex/probability_table.csv`. The LaTeX version is a `table*` using booktabs and includes the event definition, calibration description, and target months.
 
+Audit the probability output before reporting it:
+
+```powershell
+python experiments/audit_probability_outputs.py
+```
+
+This checks the dataset hash, duplicate site/scale/lead rows, quantile ordering, and the number of distinct raw versus calibrated probabilities. Isotonic calibration is piecewise constant, so repeated calibrated values are expected; the audit confirms whether the underlying q10/q50/q90 forecasts are distinct.
+
+Compare validation-only isotonic and logistic calibration on the untouched test period with:
+
+```powershell
+python -m experiments.compare_probability_calibration
+```
+
+The comparison is written to `results/probability_calibration/calibration_comparison_seed_42.csv`. For the current seed-42 run, isotonic calibration has lower ECE than raw probabilities in 9/12 scale/lead cells and lower Brier score in 4/12 cells. Logistic calibration is not selected because it has a higher mean test Brier score and ECE than both raw and isotonic probabilities for this run.
+
 The checked-in monthly observations currently end in December 2024, so the default command forecasts January through April 2025; it does not provide a live forecast for the current date. To forecast from newer observations, pass a CSV containing at least the latest six consecutive month-start rows for the site, with `date`, an optional `site` column, and every feature listed under `data.features` in the config. Values must follow the project's feature definitions, including already lag-aligned teleconnection indices and observed SPEI state features. Keep the training dataset and its saved normalizers unchanged, and pass the separate input file:
 
 ```powershell
