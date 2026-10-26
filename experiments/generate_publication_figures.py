@@ -1,9 +1,3 @@
-"""Generate reproducible publication figures from DroughtCast artifacts.
-
-The script never fabricates observations, predictions, elevation, or training
-curves.  Elevation figures are produced only when a real site/elevation table
-is supplied with ``--elevation-csv``.
-"""
 from __future__ import annotations
 
 import argparse
@@ -170,8 +164,7 @@ def figure_metric_heatmap(report: Path, out: Path) -> str:
     for r in range(matrix.shape[0]):
         for c in range(matrix.shape[1]):
             if np.isfinite(matrix[r, c]):
-                ax.text(c, r, f"{matrix[r, c]:.2f}", ha="center", va="center",
-                        color="white" if matrix[r, c] > np.nanmedian(matrix) else "black", fontsize=7)
+                ax.text(c, r, f"{matrix[r, c]:.2f}", ha="center", va="center",color="white" if matrix[r, c] > np.nanmedian(matrix) else "black", fontsize=7)
     fig.colorbar(image, ax=ax, label="RMSE (lower is better)")
     fig.tight_layout()
     save(fig, out, "figure04_test_rmse_heatmap")
@@ -184,8 +177,7 @@ def figure_residuals(data: dict, pred: np.ndarray, out: Path) -> str:
     for i, (ax, scale) in enumerate(zip(axes, SCALES)):
         valid = mask[:, i, 0] & np.isfinite(pred[:, i, 0])
         residual = pred[valid, i, 0] - y[valid, i, 0]
-        ax.hist(residual, bins=30, color=COLORS["droughtcast"], alpha=.85,
-                edgecolor="white")
+        ax.hist(residual, bins=30, color=COLORS["droughtcast"], alpha=.85,edgecolor="white")
         ax.axvline(0, color="black", lw=1)
         ax.set_title(f"{scale.upper().replace('_', '-')} | T+1")
         ax.set_xlabel("Prediction error")
@@ -197,15 +189,7 @@ def figure_residuals(data: dict, pred: np.ndarray, out: Path) -> str:
     return "figure05_residual_distributions"
 
 
-def figure_drought_map(cfg: dict, data: dict, pred: np.ndarray, out: Path,
-                       scale: str = "spei_3", threshold: float = -1.0,
-                       target_date: str | None = None) -> str:
-    """Map point forecasts and empirical drought frequency for the test period.
-
-    The frequency is the fraction of valid test-window predictions below the
-    stated threshold. It is not a calibrated probability and is labelled as
-    such in the figure.
-    """
+def figure_drought_map(cfg: dict, data: dict, pred: np.ndarray, out: Path,scale: str = "spei_3", threshold: float = -1.0,target_date: str | None = None) -> str:
     scale_idx = SCALES.index(scale)
     metadata = data["test"].metadata
     ymask = data["test"].mask.numpy()[:, scale_idx, :]
