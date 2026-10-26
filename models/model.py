@@ -1,7 +1,4 @@
-"""Backward-compatible re-exports. Prefer models.forecaster.DroughtCast. """
+"""Canonical model exports. Prefer models.forecaster.MultiScaleForecaster."""
 from models.forecaster import DroughtCast, MultiScaleForecaster
 
-# Historical names now point at the single canonical class.
-DroughtCastModel = DroughtCast
-MultiTaskAttentionLSTM = DroughtCast
-MultiHorizonForecaster = DroughtCast
+__all__ = ["MultiScaleForecaster", "DroughtCast"]

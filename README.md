@@ -1,23 +1,25 @@
 # DroughtCast
 
-DroughtCast forecasts monthly SPEI at three **accumulation scales** (SPEI-3, SPEI-6, SPEI-12). Every head predicts the same forecast horizon **T+1…T+4**. Never confuse accumulation scales with lead times.
+DroughtCast forecasts monthly SPEI at three **accumulation scales**: SPEI-3, SPEI-6, and SPEI-12. Every scale head predicts the same forecast horizon, T+1 through T+4.
 
-## Canonical architecture (`configs/base_diagram.yaml`)
+## Reference architecture
 
-| Phase | Component | Spec |
-|------|-----------|------|
-| 1 | Input | `[B, 6, 12]` — 12 climate, ocean and drought-state variables over T−6…T−1 |
-| 2 | Encoder | `LSTM(64) → Dropout(0.2) → LSTM(32)` → all hidden states `[B, 6, 32]` |
-| 3 | Attention | One additive temporal attention: `score_t = vᵀ tanh(W h_t)`, softmax over 6 steps → `[B, 6, 1]` |
-| 4 | Context | `c = Σ_t α_t h_t`, `c ∈ ℝ³²`, **shared** by all heads |
-| 5 | Heads | Three separate decoders (SPEI-3 / SPEI-6 / SPEI-12); each maps only `c` → 4 leads |
-| 6 | Output | Predictions `[B, 3, 4]` |
+The canonical configuration is [`configs/base_diagram.yaml`](configs/base_diagram.yaml). Its six phases are:
 
-The single model class is `models.forecaster.DroughtCast` (`MultiScaleForecaster` is a deprecated alias). Architecture conformance is locked by `tests/test_architecture_conformance.py`.
+1. Six monthly input steps, each with 12 climate, teleconnection, and observed SPEI features.
+2. `LSTM(64) -> Dropout(0.2) -> LSTM(32)`, returning `[B, 6, 32]`.
+3. Additive temporal attention over six steps, with weights `[B, 6, 1]` that sum to one.
+4. One shared context vector `c in R^32`.
+5. Three separate accumulation-scale decoders, each reading only `c` and producing four leads.
+6. Point forecasts with output shape `[B, 3, 4]`, trained with plain MSE.
 
-## Data
+`MultiScaleForecaster` is the sole model implementation; `DroughtCast` is its public alias. Architecture conformance is checked in `tests/test_architecture_conformance.py`.
 
-Default builder: NASA POWER monthly climate + NOAA teleconnections (ONI shifted +1 month to avoid look-ahead). SPEI is computed from P−PET (Hargreaves-Samani with `Ra/2.45`, mid-month DOY) via a nonparametric Gringorten transform calibrated through 2010-12. Observed SPEI features are **unshifted** `spei_3_obs` / `spei_6_obs` / `spei_12_obs` (information parity with persistence).
+## Data and leakage controls
+
+`data/build_dataset.py` builds monthly data from NASA POWER climate fields and NOAA indices. PET uses the monthly Hargreaves-Samani approximation and mid-month day-of-year for extraterrestrial radiation. SPEI is standardized using calibration data through December 2010. Each feature month *m* uses the published ONI, DMI, NAO, and PDO values for month *m−1*. The observed state features `spei_3_obs`, `spei_6_obs`, and `spei_12_obs` use SPEI observed through the final input month, matching persistence information.
+
+Chronological windows retain the train period through 2010-12, validation 2012-01 through 2015-12, and test from 2017-01. The intervening gaps are intentionally excluded. Feature normalization and SPEI calibration use training data only.
 
 ```powershell
 python -m data.build_dataset --start 1981 --end 2024
@@ -25,85 +27,20 @@ python train.py --config configs/base_diagram.yaml
 python evaluate.py --config configs/base_diagram.yaml
 ```
 
-Leak-free splits (unchanged): train ≤2010-12, val 2012-01…2015-12, test ≥2017-01, with 12-month gaps. Checkpoint selection uses **unweighted validation MSE**.
+To compare computed SPEI against local SPEIbase NetCDF files while building, pass `--speibase PATH`; the per-site and per-scale validation table is written to `results/speibase_validation.csv`.
 
-## Ablation variants (20)
+## Reproducibility
 
-Run with `python -m experiments.run_ablations`. Current rows:
+Install dependencies with `pip install -r requirements.txt`. Run `pytest -q` for the test suite. Training checkpoints are selected using unweighted validation MSE; the training log includes weighted loss and unweighted MSE.
 
-| # | Variant | What changes |
-|---|---------|--------------|
-| 1 | `no_attention` | `attention: none` (last hidden state) |
-| 2 | `head_specific_attention` | separate additive attention per scale |
-| 3 | `separate_encoders` | one encoder stack per scale |
-| 4 | `gru` | capacity-matched GRU 64→32 |
-| 5 | `transformer` | Transformer + positional encoding |
-| 6 | `variable_gate` | learned input-variable gate |
-| 7 | `fixed_task_weights` | equal task losses |
-| 8 | `uncertainty_task_weights` | Kendall uncertainty weighting |
-| 9 | `no_extreme_weighting` | `extreme_weight: 1.0` |
-| 10 | `extreme_weight_2` | `extreme_weight: 2.0` |
-| 11 | `huber_point_loss` | Huber instead of MSE |
-| 12 | `quantile_cqr` | three-quantile output + CQR |
-| 13 | `window_3` | `seq_len: 3` |
-| 14 | `window_12` | `seq_len: 12` |
-| 15 | `window_24` | `seq_len: 24` |
-| 16 | `without_indices` | drop ONI/DMI/NAO/PDO |
-| 17 | `without_observed_spei` | drop `spei_*_obs` |
-| 18 | `climate_only` | climate variables only |
-| 19 | `without_climate` | indices + SPEI obs only |
-| 20 | `single_site_guntur` | single-site train/eval |
+Evaluation output is written to `results/test_metrics.json`. Classical baseline failures produce a warning and the failed baseline is omitted from that run’s result table. GRU and TCN predictions average five seeds with validation early stopping. Probabilistic metrics label three-quantile CRPS as `crps_approx`.
 
-Optional Phase-2 upgrades (all **off** in `base_diagram.yaml`; each becomes an ablation row when enabled): residual heads, static descriptors, input extras (month sincos / water balance), multi-quantile CRPS, multi-scale consistency penalty.
+Paper figures are generated by `python make_paper_figures.py`. See [`paper/figures/README.md`](paper/figures/README.md) for figure sources and unavailable result artifacts. The generator reads only real files under `results/` and fails if a required input is absent.
 
-## Development
+## Spatial evidence
 
-```powershell
-pip install -r requirements.txt
-pytest -q
-python -m experiments.run_all --skip-build
-python -m experiments.run_region_holdouts
-python -m experiments.export_interpretability --checkpoint checkpoints/best_research_model.pt
-python make_figures.py
-```
+The separate gridded evidence workflow is configured in `configs/spatial_config.yaml` and uses `data.spatial_preprocess`, `experiments.run_spatial_pipeline`, and `experiments.plot_spatial_pipeline`. Gridded inference evaluates each valid cell independently; point-site predictions are not interpolated into rasters. SPEIbase is the target source and never enters the input features.
 
-Figures read only real artefacts under `results/` and fail if they are missing. Do not invent metrics; print tables from actual runs only. `base_diagram.yaml` is the reference model in every results table.
+## Interpretation
 
-## Continuous Spatial Evidence Pipeline
-
-DroughtCast includes a continuous gridded spatial evidence pipeline for climate-conference publication quality. It generates continuous drought fields with observed SPEI, predicted SPEI, drought-event probability, uncertainty, error, and elevation.
-
-### Critical Integrity Protocol
-- **No point-site interpolation:** Interpolating the eight point-site predictions into rasters is strictly prohibited and rejected by automated tests.
-- **Gridded per-cell inference:** Predictors from TerraClimate (precipitation, temperatures, solar radiation, wind speed) and observed targets from SPEIbase v2.10 are harmonized to a common 0.5° EPSG:4326 grid. The recurrent forecaster is evaluated independently across valid grid cells using local predictors and training-only normalization moments.
-- **Leakage prevention:** SPEIbase target variables are never used as input predictors. Input observed SPEI features are strictly unshifted historical values at forecast origin T.
-- **Probabilistic calibration:** Formally distinguishes (1) piecewise-linear quantile risk, (2) validation-only isotonic calibrated event probability $P(\text{SPEI} \le -1.0)$, and (3) validation-calibrated split-CQR interval coverage.
-
-### Spatial Pipeline Workflow
-
-```powershell
-# 1. Verify raw spatial sources and generate machine-readable manifest
-python -m data.spatial_download
-
-# 2. Harmonize raw grids to 0.5° EPSG:4326 (when raw downloads are present)
-python -m data.spatial_preprocess --speibase-dir data/raw/spatial/speibase --terraclimate-dir data/raw/spatial/terraclimate
-
-# 3. Execute continuous spatial pipeline (inference, calibration, NetCDF evidence product)
-python -m experiments.run_spatial_pipeline --config configs/spatial_config.yaml
-
-# 4. Evaluate against baselines (persistence, climatology, Ridge) with bootstrap CIs
-python -m experiments.evaluate_spatial_pipeline results/spatial_pipeline/spatial_evidence.nc
-
-# 5. Generate publication figures in PNG, PDF, and EPS formats
-python -m experiments.plot_spatial_pipeline results/spatial_pipeline/spatial_evidence.nc
-
-# 6. Export paper tables
-python -m experiments.generate_spatial_tables results/spatial_pipeline/tables/spatial_evaluation.json
-```
-
-## Assumptions
-
-- Point sites, not areal averages; Murray–Darling is a basin proxy.
-- Computed SPEI ≠ official SPEIbase unless `--speibase` is supplied and validated.
-- Attention weights describe model behaviour, not causation.
-- See `CHANGELOG.md` when a fix changes reported numbers.
+Attention weights describe model behaviour and do not establish causality. Computed SPEI is not equivalent to official SPEIbase unless it has been explicitly compared against SPEIbase.

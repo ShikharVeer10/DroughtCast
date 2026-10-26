@@ -17,7 +17,7 @@ from models.encoder import (
 )
 
 
-class DroughtCast(nn.Module):
+class MultiScaleForecaster(nn.Module):
     """Phase 1–6 diagram model: shared LSTM encoder, one temporal attention, three scale heads.
 
     Input  : [B, 6, D]
@@ -126,7 +126,7 @@ class DroughtCast(nn.Module):
                 ])
 
     @classmethod
-    def from_config(cls, config: Union[dict, str, Path]) -> "DroughtCast":
+    def from_config(cls, config: Union[dict, str, Path]) -> "MultiScaleForecaster":
         if isinstance(config, (str, Path)):
             import yaml
             cfg = yaml.safe_load(Path(config).read_text(encoding="utf-8"))
@@ -244,6 +244,5 @@ class DroughtCast(nn.Module):
         return torch.stack([preds[k] for k in self.SCALE_NAMES], dim=1)
 
 
-# Deprecated aliases — prefer DroughtCast.
-MultiScaleForecaster = DroughtCast
-MultiHorizonMultiHeadForecaster = DroughtCast
+# Public paper name for the one canonical implementation.
+DroughtCast = MultiScaleForecaster

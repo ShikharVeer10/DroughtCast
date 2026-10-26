@@ -9,11 +9,15 @@ import torch
 import yaml
 
 from models.config_schema import validate_config
-from models.forecaster import DroughtCast
+from models.forecaster import DroughtCast, MultiScaleForecaster
 from models.decoder import ForecastDecoder
 
 
 DIAGRAM = Path("configs/base_diagram.yaml")
+
+
+def test_droughtcast_is_alias_of_single_forecaster_class():
+    assert DroughtCast is MultiScaleForecaster
 
 
 @pytest.fixture(scope="module")

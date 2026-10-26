@@ -13,6 +13,12 @@
 - Probabilistic evaluation reports validation and test coverage; CRPS remains explicitly `crps_approx` for the configured three quantiles. CQR corrections are applied without silent clipping and nonfinite corrections raise an error.
 - No existing results were regenerated or reinterpreted.
 
+## Phase 3 — Code consistency (2026-10-26)
+
+- The only model implementation is `MultiScaleForecaster`, publicly aliased as `DroughtCast`; obsolete model-name aliases were removed.
+- Rewrote README around the six-phase diagram, corrected accumulation-scale and forecast-horizon terminology, chronology and regeneration commands. Existing strict config validation and base diagram conformance checks remain in force.
+- No scientific values or reported performance metrics were changed.
+
 ## Phase 1 — Canonical architecture
 
 - Single model class `DroughtCast` (`MultiScaleForecaster` deprecated alias); removed legacy `DroughtCastModel` / `UncertaintyWeightedMultiTaskLoss` implementations.
