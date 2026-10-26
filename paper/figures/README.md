@@ -1,18 +1,26 @@
-# Paper figures
+# Figure generation
 
-Regenerate with `python make_paper_figures.py --figure F1`; audit all ten inputs with `python make_paper_figures.py --check`. The figures currently on disk were generated from the working tree based on commit `a85e9ae`.
+The current figure entry point is `make_paper_figures.py`; regenerate available figures with:
 
-| Figure | Content | Source files | Regeneration command | Git commit | Status |
-|---|---|---|---|---|---|
-| F1 | Six-phase reference architecture | `configs/base_diagram.yaml` | `python make_paper_figures.py --figure F1` | `a85e9ae` | Generated as PDF, 300-dpi PNG, and exact plotted rows in `data/F1_architecture.csv`. |
-| F2 | Site map colored by T+4 skill vs persistence | `results/site_skill_t4.csv`, `configs/config.yaml`, Natural Earth coastlines | `python make_paper_figures.py --figure F2` | `a85e9ae` | Per-site skill is available; blocked because Cartopy and local Natural Earth coastline data are unavailable. |
-| F3 | Skill by forecast lead, scale, and method with five-seed 95% CI | `results/per_seed.csv`, `results/run_manifest.json` | `python make_paper_figures.py --figure F3` | `a85e9ae` | Blocked until results are regenerated under the current dataset alignment protocol. |
-| F4 | Named drought episode forecasts and quantile bands | `results/case_study_predictions.csv` | `python make_paper_figures.py --figure F4` | `a85e9ae` | Blocked; no timestamped forecast quantile export is present. |
-| F5 | Reliability and interval coverage by lead | `results/reliability_and_coverage.csv` | `python make_paper_figures.py --figure F5` | `a85e9ae` | Blocked; current calibration files do not provide CQR coverage by lead in the required joined schema. |
-| F6 | POD, FAR, CSI by threshold, scale, and lead with bootstrap intervals | `results/drought_event_bootstrap.csv` | `python make_paper_figures.py --figure F6` | `a85e9ae` | Blocked; current drought summaries lack lead-specific bootstrap intervals. |
-| F7 | Ablation RMSE deltas against base_diagram with 95% CI | `results/ablation_forest.csv` | `python make_paper_figures.py --figure F7` | `a85e9ae` | Blocked; only one ablation variant is present and no base_diagram comparison row exists. |
-| F8 | Attention by lead, scale, season and validation occlusion | `results/attention_occlusion.csv` | `python make_paper_figures.py --figure F8` | `a85e9ae` | Blocked; current interpretability export is aggregate and uses retired `lag_spei_*` feature names. |
-| F9 | Computed SPEI vs SPEIbase scatter | `results/speibase_validation_points.csv`, `results/speibase_validation.csv` | `python make_paper_figures.py --figure F9` | `a85e9ae` | Blocked; SPEIbase reference files were not available to produce the validation table. |
-| F10 | Leave-region-out skill by held-out region | `results/leave_region_out_skill.csv` | `python make_paper_figures.py --figure F10` | `a85e9ae` | Blocked; current holdout artifact has only South Asia. |
+```powershell
+python make_paper_figures.py --all --strict
+```
 
-After regenerating any figure, update its row with the source revision from `git rev-parse HEAD`.
+Use `python make_paper_figures.py --check` to list missing or schema-inadequate inputs. Figures F2–F10 require current chronological test/evaluation exports under `results/`; they are skipped when those files are absent. The generator writes PDF, PNG, and plotted-data CSV files under this directory. Do not treat legacy pre-fix outputs as current results.
+
+| Figure | Main input files |
+|---|---|
+| F1 architecture | `configs/base_diagram.yaml` |
+| F2 site skill map | `results/site_skill_t4.csv`, `configs/config.yaml`, `results/evaluation_manifest.json` |
+| F3 skill by lead | `results/per_seed.csv`, `results/run_manifest.json` |
+| F4 case-study forecasts | `results/case_study_predictions.csv`, `results/run_manifest.json` |
+| F5 reliability and coverage | `results/reliability_and_coverage.csv`, `results/run_manifest.json` |
+| F6 drought-event metrics | `results/drought_event_bootstrap.csv`, `results/run_manifest.json` |
+| F7 ablations | `results/ablation_forest.csv`, `results/run_manifest.json` |
+| F8 attention and occlusion | `results/attention_occlusion.csv`, `results/run_manifest.json` |
+| F9 SPEIbase validation | `results/speibase_validation_points.csv`, `results/speibase_validation.csv` |
+| F10 leave-region-out | `results/leave_region_out_skill.csv`, `results/run_manifest.json` |
+
+Probability results are tabulated separately by `python experiments/export_probability_table.py`; this uses `results/inference_probabilities_seed_42.csv` and writes `paper/latex/probability_table.tex` and `.csv`.
+
+Repository revision inspected for this documentation: `d51f9ce`.

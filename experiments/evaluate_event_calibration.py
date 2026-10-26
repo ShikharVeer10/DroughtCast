@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -9,27 +10,15 @@ import numpy as np
 import torch
 import yaml
 
-from data.loader import load_site_table
+from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import validate_checkpoint_metadata
 from utils.probability import (brier_score, calibration_slope_intercept,
                                expected_calibration_error, fit_isotonic_calibrator,
-                               reliability_table)
+                               quantile_risk_below_threshold, reliability_table)
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 QUANTILES = [0.1, 0.5, 0.9]
-
-
-def risk_below_threshold(values: np.ndarray, threshold: float) -> np.ndarray:
-    q10, q50, q90 = [values[..., i] for i in range(3)]
-    result = np.empty_like(q50, dtype=float)
-    result[threshold <= q10] = .1
-    result[threshold >= q90] = .9
-    low = (threshold > q10) & (threshold <= q50)
-    high = (threshold > q50) & (threshold < q90)
-    result[low] = .1 + .4 * (threshold - q10[low]) / (q50[low] - q10[low] + 1e-8)
-    result[high] = .5 + .4 * (threshold - q50[high]) / (q90[high] - q50[high] + 1e-8)
-    return np.clip(result, 0.0, 1.0)
 
 
 def main() -> None:
@@ -41,6 +30,9 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=-1.0)
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    protocol = validate_dataset_protocol()
+    dataset_path = Path(cfg["data"]["path"])
+    dataset_hash = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
         cfg["data"]["seq_len"], cfg["data"]["forecast_steps"],
         cfg["data"].get("metadata_path"), [], cfg["data"].get("site_filter"),
@@ -49,13 +41,28 @@ def main() -> None:
     cfg["data"]["input_dim"] = data["test"].X.shape[-1]
     state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
     validate_checkpoint_metadata(state, cfg)
+    checkpoint_metadata = state.get("artifact_metadata", {})
+    if checkpoint_metadata.get("dataset_sha256") != dataset_hash:
+        raise ValueError("Probability-calibration checkpoint dataset hash does not match the current dataset")
     model = MultiScaleForecaster(cfg)
     model.load_state_dict(state["model"])
     model.eval()
     with torch.no_grad():
         val_output, _ = model(data["val"].X)
         test_output, _ = model(data["test"].X)
-    report = {"checkpoint": args.checkpoint, "threshold": args.threshold, "method": "validation-only isotonic calibration", "scales": {}}
+    target_months = sorted({date for item in data["test"].metadata for date in item["target_dates"]})
+    report = {
+        "checkpoint": args.checkpoint,
+        "seed": checkpoint_metadata.get("seed"),
+        "threshold": args.threshold,
+        "method": "validation-only isotonic calibration of q10/q50/q90-derived event risk",
+        "calibration_split": "validation",
+        "validation_only_fit": True,
+        "dataset_sha256": dataset_hash,
+        "dataset_schema_version": protocol["schema_version"],
+        "test_period": {"start": target_months[0], "end": target_months[-1]},
+        "scales": {},
+    }
     prediction_rows = []
     for index, scale in enumerate(SCALES):
         val_q = val_output[scale].numpy()
@@ -68,8 +75,8 @@ def main() -> None:
         for lead in range(test_q.shape[1]):
             valid_val = val_mask[:, lead] & np.isfinite(val_q[:, lead]).all()
             valid_test = test_mask[:, lead] & np.isfinite(test_q[:, lead]).all()
-            raw_val = risk_below_threshold(val_q[valid_val, lead], args.threshold)
-            raw_test = risk_below_threshold(test_q[valid_test, lead], args.threshold)
+            raw_val = quantile_risk_below_threshold(val_q[valid_val, lead], args.threshold)
+            raw_test = quantile_risk_below_threshold(test_q[valid_test, lead], args.threshold)
             val_event = (val_y[valid_val, lead] <= args.threshold).astype(int)
             test_event = (test_y[valid_test, lead] <= args.threshold).astype(int)
             calibrator = fit_isotonic_calibrator(raw_val, val_event)

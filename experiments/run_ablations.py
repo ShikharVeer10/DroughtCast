@@ -50,7 +50,11 @@ if __name__ == "__main__":
     parser.add_argument("--seeds", nargs="+", type=int, default=[11, 22, 33, 44, 55])
     parser.add_argument("--variants", nargs="+", choices=sorted(VARIANTS), default=sorted(VARIANTS))
     parser.add_argument("--force", action="store_true", help="Rerun even if both checkpoint and report already exist")
+    parser.add_argument("--probability-calibration", action="store_true",
+                        help="After the quantile_cqr variant, fit validation-only event calibration for each seed")
     args = parser.parse_args()
+    if args.probability_calibration and "quantile_cqr" not in args.variants:
+        parser.error("--probability-calibration requires --variants quantile_cqr")
     base = yaml.safe_load(Path("configs/config.yaml").read_text(encoding="utf-8"))
     out_dir = Path("results/ablations")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -75,3 +79,16 @@ if __name__ == "__main__":
             subprocess.run([sys.executable, "evaluate.py", "--config", str(config_path), "--seed", str(seed),
                             "--checkpoint", str(checkpoint), "--output", str(report)], check=True)
     subprocess.run([sys.executable, "-m", "experiments.summarize_ablations", str(out_dir)], check=True)
+    if args.probability_calibration:
+        calibration_dir = Path("results/probability_calibration")
+        calibration_dir.mkdir(parents=True, exist_ok=True)
+        for seed in args.seeds:
+            subprocess.run([
+                sys.executable, "-m", "experiments.evaluate_event_calibration",
+                "--config", str(out_dir / "quantile_cqr" / "config.yaml"),
+                "--checkpoint", str(out_dir / "quantile_cqr" / f"model_seed_{seed}.pt"),
+                "--output", str(calibration_dir / f"calibration_seed_{seed}.json"),
+                "--predictions-output", str(calibration_dir / f"predictions_seed_{seed}.csv"),
+            ], check=True)
+        subprocess.run([sys.executable, "-m", "experiments.summarize_probability_calibration",
+                        "--input-dir", str(calibration_dir)], check=True)

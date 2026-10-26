@@ -1,135 +1,159 @@
-"""Export multi-horizon attention weights, permutation importances, and SHAP-aligned attributions."""
+"""Export deterministic attention and perturbation diagnostics on validation windows only."""
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import torch
 import yaml
 
 from data.loader import load_site_table
 from models.forecaster import MultiScaleForecaster
-from utils.interpretability import integrated_gradients
+from utils.artifacts import validate_checkpoint_metadata
 
-SCALES = ["spei_3", "spei_6", "spei_12"]
+SCALES = ("spei_3", "spei_6", "spei_12")
+INDICES = {"oni", "dmi", "nao", "pdo"}
 
 
-def compute_permutation_importance(model, dataset, feature_names, n_repeats=5):
-    """Computes empirical permutation feature importance on held-out windows."""
-    model.eval()
-    X = dataset.X.clone()
-    Y = dataset.Y
-    mask = dataset.mask
-    forecast_steps = Y.shape[-1]
+def _season(meta, sites):
+    month = int(meta["target_dates"][0][5:7])
+    north = {"DJF": (12, 1, 2), "MAM": (3, 4, 5), "JJA": (6, 7, 8), "SON": (9, 10, 11)}
+    south = {"DJF": (6, 7, 8), "MAM": (9, 10, 11), "JJA": (12, 1, 2), "SON": (3, 4, 5)}
+    hemi = "north" if float(sites.get(meta["site"], {}).get("lat", 0)) >= 0 else "south"
+    seasons = north if hemi == "north" else south
+    return next(name for name, months in seasons.items() if month in months)
 
+
+def _predict(model, x, last_spei, static):
     with torch.no_grad():
-        base_preds, _ = model(X)
-    
-    # Baseline RMSE across scales
-    base_rmse = {}
-    for s_idx, s_name in enumerate(SCALES):
-        valid = mask[:, s_idx].all(dim=-1)
-        base_rmse[s_name] = float(torch.sqrt(torch.mean((base_preds[s_name][valid] - Y[valid, s_idx]) ** 2)))
+        predictions, aux = model(x, last_spei=last_spei, static=static)
+    return {scale: value.squeeze(-1).cpu().numpy() if value.ndim == 3 else value.cpu().numpy()
+            for scale, value in predictions.items()}, aux["attention"].cpu().numpy()
 
-    importances = {s_name: {} for s_name in SCALES}
-    for f_idx, feat in enumerate(feature_names):
-        perm_rmse = {s_name: [] for s_name in SCALES}
-        for _ in range(n_repeats):
-            X_perm = X.clone()
-            perm_idx = torch.randperm(X.shape[0])
-            X_perm[:, :, f_idx] = X_perm[perm_idx, :, f_idx]
-            with torch.no_grad():
-                preds_perm, _ = model(X_perm)
-            for s_idx, s_name in enumerate(SCALES):
-                valid = mask[:, s_idx].all(dim=-1)
-                rmse_p = float(torch.sqrt(torch.mean((preds_perm[s_name][valid] - Y[valid, s_idx]) ** 2)))
-                perm_rmse[s_name].append(rmse_p - base_rmse[s_name])
-        for s_name in SCALES:
-            importances[s_name][feat] = float(np.mean(perm_rmse[s_name]))
-    return importances
+
+def _mse(prediction, targets, mask, samples=None):
+    values = {}
+    for scale_index, scale in enumerate(SCALES):
+        for lead_index in range(targets.shape[-1]):
+            valid = mask[:, scale_index, lead_index].copy()
+            if samples is not None:
+                valid &= samples
+            valid &= np.isfinite(prediction[scale][:, lead_index])
+            values[(scale, lead_index + 1)] = (
+                float(np.mean((prediction[scale][valid, lead_index] - targets[valid, scale_index, lead_index]) ** 2))
+                if valid.any() else float("nan")
+            )
+    return values
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--checkpoint", default="checkpoints/current_model.pt")
-    parser.add_argument("--output", default="results/interpretability.json")
+    parser.add_argument("--config", default="configs/base_diagram.yaml")
+    parser.add_argument("--checkpoint", default="results/seeds/model_seed_42.pt")
+    parser.add_argument("--output", default="results/interpretability_validation.json")
     args = parser.parse_args()
-
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
-        cfg["data"]["seq_len"], cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
+    partitions = load_site_table(
+        cfg["data"]["path"], cfg["data"].get("features"), cfg["data"]["seq_len"],
+        cfg["data"]["forecast_steps"], cfg["data"].get("metadata_path", "data/meta.json"),
         input_extras=cfg["model"].get("input_extras"),
         static_context=cfg["model"].get("static_context", False),
-        residual_heads=cfg["model"].get("heads", cfg["model"].get("head_mode", "direct")) == "residual",
-        site_specs=cfg.get("sites"))
-    test = data["test"]
-    cfg["data"]["input_dim"] = test.X.shape[-1]
-
+        residual_heads=cfg["model"].get("heads", "direct") == "residual", site_specs=cfg.get("sites"),
+    )
+    val = partitions["val"]
+    if len(val) < 2:
+        raise RuntimeError("Validation partition needs at least two windows")
+    cfg["data"]["input_dim"] = val.X.shape[-1]
+    state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    validate_checkpoint_metadata(state, cfg)
     model = MultiScaleForecaster(cfg)
-    checkpoint_state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(checkpoint_state.get("model", checkpoint_state))
+    model.load_state_dict(state.get("model", state))
     model.eval()
-
-    # Extract test attention weights
-    with torch.no_grad():
-        _, aux = model(test.X, last_spei=test.last_spei, static=test.static)
-    attention = aux["attention"].cpu().numpy()
-
-    # Per-horizon attention distribution across lags (t-6 to t-1)
-    # Shape: [N, 6, 1] or [N, 3, 6, 1]
-    if attention.ndim == 3 and attention.shape[-1] == 1:
-        attn_3x6 = np.tile(attention.squeeze(-1).mean(axis=0), (3, 1))
-    elif attention.ndim == 4:
-        attn_3x6 = attention.squeeze(-1).mean(axis=0) # [3, 6]
+    seed = int(state.get("seed", 42))
+    feature_names = list(cfg["data"]["features"])
+    targets, mask = val.Y.numpy(), val.mask.numpy()
+    seasons = np.asarray([_season(meta, cfg.get("sites", {})) for meta in val.metadata])
+    base, attention = _predict(model, val.X, val.last_spei, val.static)
+    base_mse = _mse(base, targets, mask)
+    if attention.ndim == 4:
+        attention_scale = {scale: attention[:, idx, :, 0] for idx, scale in enumerate(SCALES)}
+    elif attention.ndim == 3:
+        shared = attention[:, :, 0]
+        attention_scale = {scale: shared for scale in SCALES}
     else:
-        attn_3x6 = np.ones((3, 6)) / 6.0
+        raise ValueError(f"Unexpected attention shape {attention.shape}")
 
-    # Ensure physical lag specialization: SPEI-3 focuses on t-1, t-2; SPEI-12 memory distributed t-4 to t-6
-    # Calculate seasonal attention shift by target calendar month
-    months = np.array([int(m["target_dates"][0][5:7]) for m in test.metadata])
-    seasonal_12x6 = np.zeros((12, 6))
-    for m in range(1, 13):
-        m_mask = months == m
-        if np.any(m_mask):
-            sub_attn = attention[m_mask]
-            if sub_attn.ndim == 3:
-                seasonal_12x6[m-1] = sub_attn.mean(axis=(0, -1))
-            elif sub_attn.ndim == 4:
-                seasonal_12x6[m-1] = sub_attn.mean(axis=(0, 1, -1))
-        else:
-            seasonal_12x6[m-1] = attn_3x6.mean(axis=0)
+    lag_count, sample_count, feature_count = val.X.shape[1], val.X.shape[0], val.X.shape[2]
+    occluded_predictions = {}
+    for lag in range(lag_count):
+        changed = val.X.clone()
+        changed[:, lag, :] = val.X[:, lag, :].mean(dim=0, keepdim=True)
+        occluded_predictions[lag], _ = _predict(model, changed, val.last_spei, val.static)
 
-    # Feature Importance via Permutation & Integrated Gradients
-    feature_names = cfg["data"]["features"]
-    perm_importances = compute_permutation_importance(model, test, feature_names)
+    attention_rows = []
+    for season in ("DJF", "MAM", "JJA", "SON"):
+        sample_mask = seasons == season
+        if not sample_mask.any():
+            continue
+        baseline = _mse(base, targets, mask, sample_mask)
+        for lag in range(lag_count):
+            changed_mse = _mse(occluded_predictions[lag], targets, mask, sample_mask)
+            for scale in SCALES:
+                weights = attention_scale[scale][sample_mask].mean(axis=0)
+                for lead in range(targets.shape[-1]):
+                    attention_rows.append({
+                        "seed": seed, "split": "validation", "scale": scale, "lead": f"T+{lead + 1}",
+                        "season": season, "input_step": f"t-{lag_count - lag}",
+                        "attention": float(weights[lag]),
+                        "occlusion_delta_validation_mse": changed_mse[(scale, lead + 1)] - baseline[(scale, lead + 1)],
+                        "n_validation_windows": int(sample_mask.sum()),
+                    })
 
-    # Integrated Gradients sample
-    ig_sample_size = min(len(test), 50)
-    ig_attributions = {}
-    for scale in SCALES:
-        ig_list = []
-        for i in range(ig_sample_size):
-            ig_val = integrated_gradients(model, test.X[i:i+1], scale, 0, steps=10)
-            ig_list.append(ig_val.squeeze(0).numpy())
-        ig_attributions[scale] = np.mean(ig_list, axis=0).tolist()
+    # Rotate sample indices by a fixed half-period. This permutation is deterministic and uses validation data only.
+    order = torch.roll(torch.arange(sample_count), shifts=max(1, sample_count // 2))
+    feature_rows = []
+    for feature_index, feature in enumerate(feature_names):
+        lowered = feature.lower()
+        group = "SPEI state" if lowered.startswith("spei_") else (
+            "ocean-teleconnection" if lowered in INDICES else "local climate")
+        for lag in range(lag_count):
+            changed = val.X.clone()
+            changed[:, lag, feature_index] = val.X[order, lag, feature_index]
+            changed_prediction, _ = _predict(model, changed, val.last_spei, val.static)
+            permuted_mse = _mse(changed_prediction, targets, mask)
+            for scale in SCALES:
+                for lead in range(targets.shape[-1]):
+                    feature_rows.append({
+                        "seed": seed, "split": "validation", "feature": feature,
+                        "feature_group": group, "input_step": f"t-{lag_count - lag}",
+                        "scale": scale, "lead": f"T+{lead + 1}",
+                        "delta_validation_mse": permuted_mse[(scale, lead + 1)] - base_mse[(scale, lead + 1)],
+                        "n_validation_windows": sample_count,
+                    })
 
-    report = {
-        "feature_names": feature_names,
-        "attention": attention.tolist(),
-        "attn_3x6": attn_3x6.tolist(),
-        "seasonal_12x6": seasonal_12x6.tolist(),
-        "permutation_importance": perm_importances,
-        "integrated_gradients": ig_attributions,
-        "physical_interpretation": {
-            "spei3_temporal_locus": "Short-term immediate memory (t-1, t-2) driven by recent evapotranspiration and soil deficits.",
-            "spei12_temporal_locus": "Decaying memory spanning t-4 to t-6 coupled with oceanic teleconnection anomalies (ONI/DMI)."
-        }
-    }
-    out_path = Path(args.output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-    print(f"Exported interpretability artifacts to {out_path}")
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    attention_path = output.parent / "attention_occlusion_validation.csv"
+    feature_path = output.parent / "feature_importance_validation.csv"
+    pd.DataFrame(attention_rows).to_csv(attention_path, index=False)
+    pd.DataFrame(feature_rows).to_csv(feature_path, index=False)
+    output.write_text(json.dumps({
+        "split": "validation only", "seed": seed, "checkpoint": args.checkpoint,
+        "checkpoint_sha256": hashlib.sha256(Path(args.checkpoint).read_bytes()).hexdigest(),
+        "dataset_sha256": hashlib.sha256(Path(cfg["data"]["path"]).read_bytes()).hexdigest(),
+        "config_sha256": hashlib.sha256(Path(args.config).read_bytes()).hexdigest(),
+        "config": args.config, "attention_csv": str(attention_path),
+        "feature_importance_csv": str(feature_path),
+        "season_definition": "meteorological seasons assigned by each site's hemisphere",
+        "occlusion": "replace all feature values at one input lag with that lag's validation mean",
+        "permutation": "fixed cyclic sample permutation for one variable and lag; deterministic",
+    }, indent=2), encoding="utf-8")
+    print(pd.DataFrame(attention_rows).groupby(["scale", "season"], as_index=False).attention.mean().to_string(index=False))
+    print(pd.DataFrame(feature_rows).groupby(["feature_group", "feature"], as_index=False)
+          .delta_validation_mse.mean().to_string(index=False))
+    print(f"Exported validation-only diagnostics to {attention_path} and {feature_path}")
 
 
 if __name__ == "__main__":

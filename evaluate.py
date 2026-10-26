@@ -70,6 +70,9 @@ def main():
     parser.add_argument("--reuse-baseline-report", help="Reuse deterministic summaries from a completed evaluation JSON")
     parser.add_argument("--holdout-region", action="append", default=[])
     args = parser.parse_args()
+    report_parent = Path(args.output).parent
+    artifact_dir = Path("results") if report_parent == Path("results/seeds") else report_parent
+    artifact_dir.mkdir(parents=True, exist_ok=True)
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     dataset_protocol = validate_dataset_protocol()
     data = load_site_table(cfg["data"]["path"], cfg["data"].get("features"),
@@ -93,7 +96,10 @@ def main():
                                     static=test.static)
     quantiles = cfg["model"].get("quantiles")
     calibration_report = None
+    quantile_prediction_rows = []
     if quantiles:
+        if len(quantiles) != 3 or not np.allclose(quantiles, [0.1, 0.5, 0.9]):
+            raise ValueError("Quantile export currently requires q10, q50, and q90 in that order")
         from utils.conformal import calibrate_cqr, apply_cqr, interval_metrics, crps_from_quantiles
         val = data["val"]
         with torch.no_grad():
@@ -129,7 +135,26 @@ def main():
                     "calibration_quantile": calibrated[scale_name][lead],
                     "crps_approx": crps_from_quantiles(pred[valid, lead:lead+1, :], y[valid, lead:lead+1], quantiles)
                 }
+                export_valid = valid & np.isfinite(pred[:, lead, :]).all(axis=-1) \
+                    & np.isfinite(lower[:, lead]) & np.isfinite(upper[:, lead])
+                for sample_index in np.flatnonzero(export_valid):
+                    meta = test.metadata[sample_index]
+                    quantile_prediction_rows.append({
+                        "split": "test", "seed": args.seed, "site": meta["site"],
+                        "issue_month": meta["dates"][-1], "target_month": meta["target_dates"][lead],
+                        "scale": scale_name, "lead": f"T+{lead + 1}",
+                        "observed": float(y[sample_index, lead]),
+                        "q10": float(pred[sample_index, lead, 0]),
+                        "q50": float(pred[sample_index, lead, 1]),
+                        "q90": float(pred[sample_index, lead, 2]),
+                        "cqr_lower": float(lower[sample_index, lead]),
+                        "cqr_upper": float(upper[sample_index, lead]),
+                    })
             calibration_report["scales"][scale_name] = metrics
+        quantile_path = artifact_dir / f"quantile_test_predictions_seed_{args.seed}.csv"
+        quantile_path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame(quantile_prediction_rows).to_csv(quantile_path, index=False)
+        print(f"Saved chronological test quantile predictions to {quantile_path}")
     targets, mask = test.Y.numpy(), test.mask.numpy()
     if quantiles:
         model_array = np.stack([model_prediction[k][:, :, 1].numpy() for k in SCALES], axis=1)
@@ -147,6 +172,7 @@ def main():
             if not valid.any():
                 continue
             site_skill_rows.append({
+                "seed": args.seed,
                 "site": site, "scale": scale_name,
                 "latitude": cfg.get("sites", {}).get(site, {}).get("lat"),
                 "longitude": cfg.get("sites", {}).get(site, {}).get("lon"),
@@ -155,7 +181,7 @@ def main():
                     pers_preds[valid, scale_idx, -1]),
                 "n": int(valid.sum()),
             })
-    site_skill_path = Path("results/site_skill_t4.csv")
+    site_skill_path = artifact_dir / "site_skill_t4.csv"
     site_skill_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(site_skill_rows).to_csv(site_skill_path, index=False)
 
@@ -181,6 +207,30 @@ def main():
                 raise RuntimeError(f"Methods {method!r} and {other!r} produced identical predictions")
     results = {name: summarize_predictions(pred, targets, mask, test.metadata)
                for name, pred in all_predictions.items()}
+    # Retain every chronological test prediction so paper figures can be rebuilt
+    # from actual observations and forecasts instead of aggregate metrics.
+    prediction_rows = []
+    for sample_idx, meta in enumerate(test.metadata):
+        for scale_idx, scale_name in enumerate(SCALES):
+            for lead_idx in range(targets.shape[-1]):
+                if not mask[sample_idx, scale_idx, lead_idx]:
+                    continue
+                row = {
+                    "split": "test",
+                    "seed": args.seed,
+                    "site": meta["site"],
+                    "issue_month": meta["dates"][-1],
+                    "target_month": meta["target_dates"][lead_idx],
+                    "scale": scale_name,
+                    "lead": f"T+{lead_idx + 1}",
+                    "observed": float(targets[sample_idx, scale_idx, lead_idx]),
+                }
+                for method, prediction in all_predictions.items():
+                    row[f"prediction_{method}"] = float(prediction[sample_idx, scale_idx, lead_idx])
+                prediction_rows.append(row)
+    prediction_path = artifact_dir / f"test_predictions_seed_{args.seed}.csv"
+    prediction_path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(prediction_rows).to_csv(prediction_path, index=False)
     if cached_baseline_results is not None:
         results.update(cached_baseline_results)
 
@@ -289,9 +339,9 @@ def main():
         "seed": args.seed,
         "evaluation_report": str(output),
     }, indent=2)
-    (output.parent / "evaluation_manifest.json").write_text(evaluation_manifest, encoding="utf-8")
-    (Path("results") / "evaluation_manifest.json").write_text(evaluation_manifest, encoding="utf-8")
+    (artifact_dir / "evaluation_manifest.json").write_text(evaluation_manifest, encoding="utf-8")
     print(f"Saved evaluation metrics to {output}")
+    print(f"Saved chronological test predictions to {prediction_path}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """Train on train windows, select on validation loss, never inspect test for selection."""
 import random
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -160,6 +161,7 @@ def main():
     checkpoint = Path(args.checkpoint) if args.checkpoint else Path(cfg["training"]["checkpoint_dir"]) / "current_model.pt"
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     best, stale = float("inf"), 0
+    history = []
     ext_weight = cfg["training"].get("extreme_weight", 3.0)
     ext_thresh = cfg["training"].get("extreme_threshold", -1.5)
     loss_kind = cfg["training"].get("loss", "mse")
@@ -171,6 +173,9 @@ def main():
         va_loss, va_mse = epoch_loss(model, val_loader, extreme_weight=ext_weight, extreme_threshold=ext_thresh,
                                      quantiles=quantiles, task_weighting=task_weighting, task_log_vars=task_log_vars,
                                      loss_kind=loss_kind, consistency_weight=model.consistency_weight)
+        history.append({"epoch": epoch + 1, "train_loss_weighted": tr_loss,
+                        "train_mse_unweighted": tr_mse, "validation_loss_weighted": va_loss,
+                        "validation_mse_unweighted": va_mse})
         # Checkpoint on unweighted validation MSE; learned uncertainty weights change over epochs.
         scheduler.step(va_mse)
         if (epoch + 1) % 10 == 0 or epoch == 0:
@@ -188,6 +193,12 @@ def main():
         if stale >= cfg["training"].get("early_stopping_patience", 12):
             print(f"Early stopping triggered at epoch {epoch+1}")
             break
+
+    run_dir = checkpoint.parent
+    (run_dir / f"history_seed_{seed}.json").write_text(json.dumps({
+        "seed": seed, "config": str(args.config), "selected_epoch": int(min(history, key=lambda row: row["validation_mse_unweighted"])["epoch"]),
+        "epochs": history,
+    }, indent=2), encoding="utf-8")
 
 
 if __name__ == "__main__":

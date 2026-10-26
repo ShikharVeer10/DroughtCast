@@ -6,6 +6,24 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 
+def quantile_risk_below_threshold(quantiles: np.ndarray, threshold: float) -> np.ndarray:
+    """Estimate lower-tail event risk by piecewise-linear interpolation of q10/q50/q90."""
+    values = np.asarray(quantiles, dtype=float)
+    if values.shape[-1] != 3:
+        raise ValueError("Expected exactly three quantiles ordered as q10, q50, q90")
+    q10, q50, q90 = (values[..., i] for i in range(3))
+    if not np.isfinite(values).all() or np.any(q10 > q50) or np.any(q50 > q90):
+        raise ValueError("Quantile values must be finite and monotonically ordered")
+    risk = np.empty_like(q50, dtype=float)
+    risk[threshold <= q10] = 0.1
+    risk[threshold >= q90] = 0.9
+    low = (threshold > q10) & (threshold <= q50)
+    high = (threshold > q50) & (threshold < q90)
+    risk[low] = 0.1 + 0.4 * (threshold - q10[low]) / (q50[low] - q10[low] + 1e-8)
+    risk[high] = 0.5 + 0.4 * (threshold - q50[high]) / (q90[high] - q50[high] + 1e-8)
+    return np.clip(risk, 0.0, 1.0)
+
+
 def fit_isotonic_calibrator(raw_probability: np.ndarray,
                             event: np.ndarray) -> IsotonicRegression:
     raw = np.asarray(raw_probability, dtype=float)

@@ -1,0 +1,40 @@
+\begin{table*}[t]
+\centering
+\caption{Validation-calibrated probability of drought, defined as SPEI at or below -1. Entries are decimal probabilities on [0, 1], shown by configured site, SPEI accumulation scale, and forecast lead. The model uses the six latest available monthly inputs; calibration uses the validation split.}
+\label{tab:calibrated-drought-probabilities}
+\small
+\begin{tabular}{llrrrr}
+\toprule
+Site & Accumulation scale & T+1 (2025-01) & T+2 (2025-02) & T+3 (2025-03) & T+4 (2025-04) \\
+\midrule
+addis\_ababa & SPEI-3 & 0.0151 & 0.0397 & 0.0678 & 0.0444 \\
+addis\_ababa & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
+addis\_ababa & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
+guntur & SPEI-3 & 0.0714 & 0.1000 & 0.1429 & 0.1467 \\
+guntur & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
+guntur & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
+jaipur & SPEI-3 & 0.0151 & 0.0397 & 0.0678 & 0.0444 \\
+jaipur & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
+jaipur & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
+murray\_darling & SPEI-3 & 0.0151 & 0.0435 & 0.1918 & 0.1467 \\
+murray\_darling & SPEI-6 & 0.2500 & 0.1515 & 0.0287 & 0.0588 \\
+murray\_darling & SPEI-12 & 0.9167 & 0.8824 & 0.9333 & 0.4667 \\
+nagpur & SPEI-3 & 0.0151 & 0.0435 & 0.1212 & 0.1250 \\
+nagpur & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
+nagpur & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
+phoenix & SPEI-3 & 0.6667 & 0.3158 & 0.2222 & 0.3636 \\
+phoenix & SPEI-6 & 0.8750 & 1.0000 & 0.5000 & 0.3333 \\
+phoenix & SPEI-12 & 0.9167 & 0.8824 & 0.9333 & 0.9459 \\
+pretoria & SPEI-3 & 0.6667 & 0.3158 & 0.2222 & 0.3636 \\
+pretoria & SPEI-6 & 0.8750 & 1.0000 & 0.5000 & 0.3333 \\
+pretoria & SPEI-12 & 0.9167 & 0.8824 & 0.9333 & 1.0000 \\
+seville & SPEI-3 & 0.0151 & 0.1000 & 0.1212 & 0.1467 \\
+seville & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
+seville & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
+\bottomrule
+\end{tabular}
+\vspace{2pt}
+\begin{minipage}{0.96\textwidth}\footnotesize
+Entries are calibrated event probabilities from the saved quantile checkpoint; they are not binary classifications. The validation-fitted isotonic map is piecewise constant, so tied probabilities across sites can occur. Forecast target months are 2025-01, 2025-02, 2025-03, 2025-04. Sites are the locations configured in this dataset, not a complete state-level coverage.\\
+\end{minipage}
+\end{table*}

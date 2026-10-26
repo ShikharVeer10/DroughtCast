@@ -424,6 +424,8 @@ def figure_f10():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="List missing or insufficient inputs for F1–F10")
+    parser.add_argument("--all", action="store_true", help="Generate every figure whose real result inputs are available")
+    parser.add_argument("--strict", action="store_true", help="Exit nonzero if any requested figure is blocked")
     parser.add_argument("--figure", choices=[f"F{i}" for i in range(1, 11)],
                         help="Generate one figure (default: generate available figures, then report blockers)")
     args = parser.parse_args()
@@ -450,7 +452,10 @@ def main():
         except Exception as exc:
             errors.append(f"{name}: {exc}")
     if errors:
-        raise FileNotFoundError("Paper figure generation blocked:\n" + "\n".join(errors))
+        print("Paper figure generation blocked:")
+        for error in errors:
+            print(f"- {error}")
+        return 1 if args.strict else 0
     return 0
 
 

@@ -29,6 +29,38 @@ python train.py --config configs/base_diagram.yaml
 python evaluate.py --config configs/base_diagram.yaml
 ```
 
+## Generate a new site forecast
+
+Run inference from the project root to print calibrated probabilities for every configured site, or replace `all` with a single site name from `configs/config.yaml`:
+
+  ```powershell
+  python inference.py --site all
+  ```
+
+The command loads the current dataset-matched q10/q50/q90 checkpoint at `results/ablations/quantile_cqr/model_seed_42.pt`, reads the latest six real monthly rows for each configured site from `data/monthly_sites.csv`, applies each site's saved train-only normalizer, and fits a separate isotonic probability calibrator for each accumulation scale and lead using validation data. The terminal tables print q10/q50/q90 forecasts and the calibrated probability that SPEI is at or below -1.0. The same rows are saved to `results/inference_probabilities_seed_42.csv`; pass `--output-csv PATH` to choose another destination. SPEI-3/6/12 are accumulation scales; T+1..T+4 are forecast leads.
+
+Export a compact research-paper table (one row per configured site and SPEI accumulation scale, with separate columns for T+1..T+4) from those exact inference results:
+
+```powershell
+python experiments/export_probability_table.py
+```
+
+This prints decimal probabilities (0 to 1) in the terminal and writes `paper/latex/probability_table.tex` plus `paper/latex/probability_table.csv`. The LaTeX version is a `table*` using booktabs and includes the event definition, calibration description, and target months.
+
+The checked-in monthly observations currently end in December 2024, so the default command forecasts January through April 2025; it does not provide a live forecast for the current date. To forecast from newer observations, pass a CSV containing at least the latest six consecutive month-start rows for the site, with `date`, an optional `site` column, and every feature listed under `data.features` in the config. Values must follow the project's feature definitions, including already lag-aligned teleconnection indices and observed SPEI state features. Keep the training dataset and its saved normalizers unchanged, and pass the separate input file:
+
+```powershell
+python inference.py --site jaipur --input-csv path\to\latest_monthly_inputs.csv
+```
+
+Use `--drought-threshold -1.5` to obtain a probability for the severe-drought threshold instead. Calibration is refit on the validation split for the selected threshold. It is an empirically calibrated model probability, not a guarantee of occurrence.
+
+To generate chronological test-period calibration diagnostics and per-case calibrated probabilities for the research paper, run:
+
+```powershell
+python -m experiments.evaluate_event_calibration --config results/ablations/quantile_cqr/config.yaml --checkpoint results/ablations/quantile_cqr/model_seed_42.pt --output results/probability_calibration/calibration_seed_42.json --predictions-output results/probability_calibration/predictions_seed_42.csv --threshold -1.0
+```
+
 To compare computed SPEI against local SPEIbase NetCDF files while building, pass `--speibase PATH`; the per-site and per-scale validation table is written to `results/speibase_validation.csv`.
 
 ## Reproducibility

@@ -44,3 +44,9 @@
 - **Training:** checkpoint selection uses unweighted validation MSE (logs both weighted loss and MSE).
 
 Any previously reported metrics trained on `lag_spei_*`, unshifted ONI, or the old PET/SPEI formulas are not comparable to post-Phase-0 numbers and must be regenerated.
+
+## Calibrated probability table (2026-10-26)
+
+- Added a reproducible exporter that formats the real all-site inference CSV as a 24-row site-by-accumulation-scale paper table with T+1..T+4 decimal-probability columns, LaTeX booktabs output, and a companion CSV. The current export contains eight configured sites and probabilities for SPEI <= -1.0; forecast months and threshold are read from the input file.
+- Removed the unused legacy `make_figures.py`; `make_paper_figures.py` is the project's referenced figure entry point. Restored the shared figure-style module required by that entry point and its QA checks.
+- No probabilities or evaluation metrics were edited by hand; table values are read directly from `results/inference_probabilities_seed_42.csv`.
