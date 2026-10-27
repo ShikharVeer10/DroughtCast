@@ -1,9 +1,3 @@
-"""Reproducible IEEE results and figure assets from real DroughtCast outputs.
-
-Existing F1-F10 renderers remain reusable. The G1-G18 publication inventory
-audits their underlying sources and produces only supported results.
-"""
-
 from __future__ import annotations
 
 import argparse

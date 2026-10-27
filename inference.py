@@ -1,10 +1,3 @@
-"""Inference interface for DroughtCast.
-
-Loads a trained model checkpoint and config, accepts an input sequence of
-historical meteorological and teleconnection observations, and produces
-multi-scale SPEI forecasts (SPEI-3, SPEI-6, SPEI-12) over lead times T+1..T+4.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -27,14 +20,7 @@ SCALES = ("spei_3", "spei_6", "spei_12")
 
 
 class DroughtCastPredictor:
-    """Production and research inference wrapper for DroughtCast."""
-
-    def __init__(
-        self,
-        checkpoint_path: str | Path,
-        config_path: str | Path | None = None,
-        device: str = "cpu",
-    ):
+    def __init__(self,checkpoint_path: str | Path,config_path: str | Path | None = None,device: str = "cpu",):
         self.device = torch.device(device)
         chk = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         checkpoint_cfg = None
@@ -45,10 +31,7 @@ class DroughtCastPredictor:
                 Path(config_path).read_text(encoding="utf-8")
             )
         else:
-            raise ValueError(
-                "Configuration must be provided or present in the checkpoint."
-            )
-
+            raise ValueError("Configuration must be provided or present in the checkpoint.")
         if isinstance(chk, dict):
             validate_checkpoint_metadata(chk, checkpoint_cfg)
         if config_path is not None and isinstance(chk, dict) and chk.get("config"):
@@ -76,21 +59,6 @@ class DroughtCastPredictor:
     def predict(
         self, x: np.ndarray | torch.Tensor
     ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
-        """
-        Produce multi-scale forecasts for input tensor.
-
-        Parameters
-        ----------
-        x : array-like of shape [Batch, Seq_len=6, Features=12]
-
-        Returns
-        -------
-        predictions : dict
-            Keys 'spei_3', 'spei_6', 'spei_12'; point output is [Batch, 4],
-            quantile output is [Batch, 4, number_of_quantiles].
-        aux : dict
-            Auxiliary outputs including attention weights of shape [Batch, ...].
-        """
         if isinstance(x, np.ndarray):
             x_t = torch.as_tensor(x, dtype=torch.float32, device=self.device)
         else:
@@ -179,8 +147,7 @@ def _load_recent_input(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Print validation-calibrated drought-event probabilities from DroughtCast."
+    parser = argparse.ArgumentParser(description="Print validation-calibrated drought-event probabilities from DroughtCast."
     )
     parser.add_argument(
         "--checkpoint",
@@ -223,9 +190,7 @@ def main():
         raise FileNotFoundError(
             f"Checkpoint not found: {chk_path}. Train a model with `python train.py --config configs/base_diagram.yaml`."
         )
-    predictor = DroughtCastPredictor(
-        chk_path, config_path=args.config, device=args.device
-    )
+    predictor = DroughtCastPredictor(chk_path, config_path=args.config, device=args.device)
     cfg = predictor.cfg
     features = list(cfg["data"]["features"])
     seq_len = int(cfg["data"].get("seq_len", 6))
@@ -244,16 +209,12 @@ def main():
     checkpoint_meta = checkpoint.get("artifact_metadata", {})
     training_hash = hashlib.sha256(training_data_path.read_bytes()).hexdigest()
     if checkpoint_meta.get("dataset_sha256") != training_hash:
-        raise ValueError(
-            "Quantile checkpoint dataset hash does not match the current training dataset"
-        )
+        raise ValueError("Quantile checkpoint dataset hash does not match the current training dataset")
     if (
         input_csv.resolve() == training_data_path.resolve()
         and hashlib.sha256(input_csv.read_bytes()).hexdigest() != training_hash
     ):
-        raise ValueError(
-            "Input dataset changed after checkpoint training; use a separate --input-csv for new observations"
-        )
+        raise ValueError("Input dataset changed after checkpoint training; use a separate --input-csv for new observations")
 
     calibration_data = load_site_table(
         training_data_path,
@@ -270,9 +231,7 @@ def main():
     )
     validation = calibration_data["val"]
     if not len(validation):
-        raise RuntimeError(
-            "No validation samples are available to fit probability calibration"
-        )
+        raise RuntimeError("No validation samples are available to fit probability calibration")
     validation_predictions, _ = predictor.predict(validation.X)
     configured_sites = cfg.get("sites", {})
     if not isinstance(configured_sites, dict) or not configured_sites:
@@ -295,9 +254,6 @@ def main():
     predictions, _ = predictor.predict(
         np.stack([site_inputs[site][0] for site in selected_sites])
     )
-
-    # Fit each scale/lead calibration map once, then apply the same validation-derived
-    # map to every site's forecast.
     calibrators = {}
     for scale_index, scale in enumerate(SCALES):
         for lead in range(int(cfg["data"]["forecast_steps"])):
@@ -323,9 +279,7 @@ def main():
     print(f"Checkpoint: {chk_path}")
     print(f"Input data: {input_csv}")
     print(f"Event: SPEI <= {args.drought_threshold:.1f}")
-    print(
-        "Calibration: validation-only isotonic regression, fitted separately by scale and lead"
-    )
+    print("Calibration: validation-only isotonic regression, fitted separately by scale and lead")
     rows = []
     for site_index, site in enumerate(selected_sites):
         _, input_dates, _ = site_inputs[site]
@@ -379,9 +333,7 @@ def main():
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nSaved {len(rows)} forecasts to {output_path}")
-    print(
-        "Probabilities are calibrated from validation data for this checkpoint and threshold; they are not guarantees of future occurrence."
-    )
+    print("Probabilities are calibrated from validation data for this checkpoint and threshold; they are not guarantees of future occurrence.")
 
 
 if __name__ == "__main__":

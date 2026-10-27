@@ -1,13 +1,5 @@
-"""Input attribution and attention summaries for DroughtCast.
-
-Integrated Gradients measures model sensitivity along a baseline path. These
-scores are associations with model output, not causal effects.
-"""
-
 from __future__ import annotations
-
 import torch
-
 
 def integrated_gradients(
     model,
@@ -40,7 +32,6 @@ def integrated_gradients(
             inputs, baselines=baseline, n_steps=steps
         )
     except ImportError:
-        # Keeps source checkouts usable before optional pinned dependencies are installed.
         pass
     delta = inputs - baseline
     grads = []
@@ -54,7 +45,6 @@ def integrated_gradients(
         score = value[:, lead].sum()
         grad = torch.autograd.grad(score, point, retain_graph=False)[0]
         grads.append(grad)
-    # Trapezoidal approximation to the path integral.
     stack = torch.stack(grads)
     average = (stack[0] + stack[-1] + 2 * stack[1:-1].sum(dim=0)) / (2 * (steps - 1))
     return delta * average
