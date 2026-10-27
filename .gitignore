@@ -5,6 +5,7 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+.pytest_tmp/
 
 # Environments and Package Managers
 .venv/
