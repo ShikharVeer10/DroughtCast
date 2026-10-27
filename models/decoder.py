@@ -1,16 +1,21 @@
 """Per-scale forecast heads. Each head maps shared context c in R^H to T+1..T+L leads."""
+
 from __future__ import annotations
 
-from typing import Tuple
-
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class ForecastDecoder(nn.Module):
     """Direct MLP head: c -> forecast_steps leads."""
 
-    def __init__(self, context_dim: int = 32, forecast_steps: int = 4, hidden_dim: int = 64, dropout: float = 0.2):
+    def __init__(
+        self,
+        context_dim: int = 32,
+        forecast_steps: int = 4,
+        hidden_dim: int = 64,
+        dropout: float = 0.2,
+    ):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(context_dim, hidden_dim),
@@ -37,19 +42,27 @@ class CascadedHydrologicalDecoder(nn.Module):
         super().__init__()
         self.forecast_steps = forecast_steps
         self.spei3_head = nn.Sequential(
-            nn.Linear(context_dim, hidden_dim), nn.ReLU(), nn.Dropout(spei3_dropout),
+            nn.Linear(context_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(spei3_dropout),
             nn.Linear(hidden_dim, forecast_steps),
         )
         self.spei6_head = nn.Sequential(
-            nn.Linear(context_dim + forecast_steps, hidden_dim), nn.ReLU(), nn.Dropout(base_dropout),
+            nn.Linear(context_dim + forecast_steps, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(base_dropout),
             nn.Linear(hidden_dim, forecast_steps),
         )
         self.spei12_head = nn.Sequential(
-            nn.Linear(context_dim + forecast_steps, hidden_dim), nn.ReLU(), nn.Dropout(base_dropout),
+            nn.Linear(context_dim + forecast_steps, hidden_dim),
+            nn.ReLU(),
+            nn.Dropout(base_dropout),
             nn.Linear(hidden_dim, forecast_steps),
         )
 
-    def forward(self, context: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self, context: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         c3 = context[:, 0] if context.dim() == 3 else context
         c6 = context[:, 1] if context.dim() == 3 else context
         c12 = context[:, 2] if context.dim() == 3 else context

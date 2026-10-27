@@ -3,17 +3,25 @@
 Integrated Gradients measures model sensitivity along a baseline path. These
 scores are associations with model output, not causal effects.
 """
+
 from __future__ import annotations
 
-import numpy as np
 import torch
 
 
-def integrated_gradients(model, inputs: torch.Tensor, scale: str, lead: int,
-                         baseline: torch.Tensor | None = None, steps: int = 64) -> torch.Tensor:
+def integrated_gradients(
+    model,
+    inputs: torch.Tensor,
+    scale: str,
+    lead: int,
+    baseline: torch.Tensor | None = None,
+    steps: int = 64,
+) -> torch.Tensor:
     if steps < 2:
         raise ValueError("steps must be >= 2")
-    baseline = torch.zeros_like(inputs) if baseline is None else baseline.to(inputs.device)
+    baseline = (
+        torch.zeros_like(inputs) if baseline is None else baseline.to(inputs.device)
+    )
     if baseline.shape != inputs.shape:
         baseline = baseline.expand_as(inputs)
     try:
@@ -21,10 +29,16 @@ def integrated_gradients(model, inputs: torch.Tensor, scale: str, lead: int,
 
         def selected_output(value):
             prediction = model(value)[0][scale]
-            return prediction[..., 1][:, lead] if prediction.ndim == 3 else prediction[:, lead]
+            return (
+                prediction[..., 1][:, lead]
+                if prediction.ndim == 3
+                else prediction[:, lead]
+            )
 
         model.eval()
-        return IntegratedGradients(selected_output).attribute(inputs, baselines=baseline, n_steps=steps)
+        return IntegratedGradients(selected_output).attribute(
+            inputs, baselines=baseline, n_steps=steps
+        )
     except ImportError:
         # Keeps source checkouts usable before optional pinned dependencies are installed.
         pass
@@ -46,9 +60,15 @@ def integrated_gradients(model, inputs: torch.Tensor, scale: str, lead: int,
     return delta * average
 
 
-def batch_interpretability(model, inputs: torch.Tensor, feature_names: list[str],
-                           metadata: list[dict], scales=("spei_3", "spei_6", "spei_12"),
-                           lead: int = 0, steps: int = 64) -> dict:
+def batch_interpretability(
+    model,
+    inputs: torch.Tensor,
+    feature_names: list[str],
+    metadata: list[dict],
+    scales=("spei_3", "spei_6", "spei_12"),
+    lead: int = 0,
+    steps: int = 64,
+) -> dict:
     attributions = {s: [] for s in scales}
     attention_rows = []
     for scale in scales:
@@ -62,6 +82,10 @@ def batch_interpretability(model, inputs: torch.Tensor, feature_names: list[str]
         attn = attn.mean(axis=1)
     if attn.ndim == 3 and attn.shape[-1] == 1:
         attn = attn[..., 0]
-    return {"feature_names": feature_names, "metadata": metadata,
-            "integrated_gradients": attributions, "attention": attn,
-            "warning": "Attributions and attention describe model behaviour and do not establish causal effects."}
+    return {
+        "feature_names": feature_names,
+        "metadata": metadata,
+        "integrated_gradients": attributions,
+        "attention": attn,
+        "warning": "Attributions and attention describe model behaviour and do not establish causal effects.",
+    }

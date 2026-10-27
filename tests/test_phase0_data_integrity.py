@@ -1,4 +1,5 @@
 """Phase 0 blocking tests: PET, SPEI standardization, SPEI obs parity, ONI lag, leakage."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -28,12 +29,15 @@ def test_mid_month_doy_not_first_of_month():
 def test_hargreaves_et0_known_case_jaipur_june():
     """lat 26.9, June, Tmean 34, TR 12 -> ET0 about 6.9 mm/day."""
     idx = pd.DatetimeIndex(["2020-06-01"])
-    frame = pd.DataFrame({
-        "T2M": [34.0],
-        "T2M_MAX": [40.0],
-        "T2M_MIN": [28.0],  # TR = 12
-        "ALLSKY_SFC_SW_DWN": [0.0],  # unused by corrected formula
-    }, index=idx)
+    frame = pd.DataFrame(
+        {
+            "T2M": [34.0],
+            "T2M_MAX": [40.0],
+            "T2M_MIN": [28.0],  # TR = 12
+            "ALLSKY_SFC_SW_DWN": [0.0],  # unused by corrected formula
+        },
+        index=idx,
+    )
     pet_month = estimate_pet_hargreaves(frame, latitude=26.9)
     et0_day = float(pet_month.iloc[0]) / idx.days_in_month[0]
     assert et0_day == pytest.approx(6.9, abs=0.15)
@@ -68,12 +72,14 @@ def test_oni_shifted_plus_one_month():
     """Feature at month m must use ONI centered on m-1 (no look-ahead into m+1)."""
     from data.build_dataset import _parse_noaa_text
 
-    text = "\n".join([
-        "SEAS  YR   TOTAL  ANOM",
-        "DJF  2000   0.0  1.00",
-        "JFM  2000   0.0  2.00",
-        "FMA  2000   0.0  3.00",
-    ])
+    text = "\n".join(
+        [
+            "SEAS  YR   TOTAL  ANOM",
+            "DJF  2000   0.0  1.00",
+            "JFM  2000   0.0  2.00",
+            "FMA  2000   0.0  3.00",
+        ]
+    )
     series = _parse_noaa_text("oni", text)
     # DJF -> January, JFM -> February
     assert series.loc[pd.Timestamp("2000-01-01")] == pytest.approx(1.0)
@@ -88,13 +94,28 @@ def test_spei_obs_feature_names_and_no_shift_parity(tmp_path):
     rows = []
     for i, date in enumerate(dates):
         spei = float(i) / 10.0
-        rows.append({
-            "date": date, "site": "x", "region": "r",
-            "PRECTOTCORR": 1.0, "T2M": 20.0, "T2MDEW": 10.0, "WS10M": 2.0,
-            "ALLSKY_SFC_SW_DWN": 5.0, "oni": 0.0, "dmi": 0.0, "nao": 0.0, "pdo": 0.0,
-            "spei_3": spei, "spei_6": spei, "spei_12": spei,
-            "spei_3_obs": spei, "spei_6_obs": spei, "spei_12_obs": spei,
-        })
+        rows.append(
+            {
+                "date": date,
+                "site": "x",
+                "region": "r",
+                "PRECTOTCORR": 1.0,
+                "T2M": 20.0,
+                "T2MDEW": 10.0,
+                "WS10M": 2.0,
+                "ALLSKY_SFC_SW_DWN": 5.0,
+                "oni": 0.0,
+                "dmi": 0.0,
+                "nao": 0.0,
+                "pdo": 0.0,
+                "spei_3": spei,
+                "spei_6": spei,
+                "spei_12": spei,
+                "spei_3_obs": spei,
+                "spei_6_obs": spei,
+                "spei_12_obs": spei,
+            }
+        )
     path = tmp_path / "monthly.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     features = ["spei_3_obs", "spei_6_obs", "spei_12_obs"]
@@ -111,15 +132,25 @@ def test_window_spei_no_target_leakage(tmp_path):
     dates = pd.date_range("2008-01-01", "2010-12-01", freq="MS")
     rows = []
     for i, date in enumerate(dates):
-        rows.append({
-            "date": date, "site": "x", "region": "r", "f": float(i),
-            "spei_3": float(i), "spei_6": float(i), "spei_12": float(i),
-            "spei_3_obs": float(i), "spei_6_obs": float(i), "spei_12_obs": float(i),
-        })
+        rows.append(
+            {
+                "date": date,
+                "site": "x",
+                "region": "r",
+                "f": float(i),
+                "spei_3": float(i),
+                "spei_6": float(i),
+                "spei_12": float(i),
+                "spei_3_obs": float(i),
+                "spei_6_obs": float(i),
+                "spei_12_obs": float(i),
+            }
+        )
     path = tmp_path / "leak.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
-    data = load_site_table(path, ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
-                           seq_len=4, forecast_steps=2)
+    data = load_site_table(
+        path, ["spei_3_obs", "spei_6_obs", "spei_12_obs"], seq_len=4, forecast_steps=2
+    )
     for split in ("train", "val", "test"):
         for meta in data[split].metadata:
             input_dates = [pd.Timestamp(d) for d in meta["dates"]]
@@ -137,19 +168,38 @@ def test_all_monthly_indices_are_aligned_to_previous_month():
     from data.build_dataset import build_site
 
     dates = pd.date_range("2000-01-01", periods=4, freq="MS")
-    frame = pd.DataFrame({
-        "PRECTOTCORR": 1.0, "T2M": 20.0, "T2MDEW": 10.0, "WS10M": 2.0,
-        "ALLSKY_SFC_SW_DWN": 5.0, "T2M_MAX": 25.0, "T2M_MIN": 15.0,
-    }, index=dates)
+    frame = pd.DataFrame(
+        {
+            "PRECTOTCORR": 1.0,
+            "T2M": 20.0,
+            "T2MDEW": 10.0,
+            "WS10M": 2.0,
+            "ALLSKY_SFC_SW_DWN": 5.0,
+            "T2M_MAX": 25.0,
+            "T2M_MIN": 15.0,
+        },
+        index=dates,
+    )
 
     def fake_fetch(*_args):
         return frame.copy()
 
     from unittest.mock import patch
-    indices = pd.DataFrame({name: np.arange(4, dtype=float) for name in ("oni", "dmi", "nao", "pdo")}, index=dates)
+
+    indices = pd.DataFrame(
+        {name: np.arange(4, dtype=float) for name in ("oni", "dmi", "nao", "pdo")},
+        index=dates,
+    )
     with patch("data.build_dataset.fetch_power", side_effect=fake_fetch):
-        result = build_site("x", {"lat": 10.0, "region": "test"}, 2000, 2000,
-                            None, "nonparametric", indices)
+        result = build_site(
+            "x",
+            {"lat": 10.0, "region": "test"},
+            2000,
+            2000,
+            None,
+            "nonparametric",
+            indices,
+        )
     for name in ("oni", "dmi", "nao", "pdo"):
         assert np.isnan(result.loc[0, name])
         assert result.loc[1, name] == 0.0

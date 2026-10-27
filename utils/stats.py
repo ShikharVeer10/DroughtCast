@@ -1,7 +1,7 @@
 """Paired uncertainty, Diebold-Mariano, and Wilcoxon Signed-Rank tests for forecast comparisons."""
+
 import numpy as np
 from scipy import stats
-from typing import Dict, List, Optional, Tuple, Union
 
 
 def effective_sample_size(values) -> int:
@@ -36,10 +36,10 @@ def holm_adjust(p_values: list[float]) -> list[float]:
 
 
 def wilcoxon_signed_rank_test(
-    loss_model: Union[List[float], np.ndarray],
-    loss_baseline: Union[List[float], np.ndarray],
-    alternative: str = "less"
-) -> Dict[str, Union[float, int, bool]]:
+    loss_model: list[float] | np.ndarray,
+    loss_baseline: list[float] | np.ndarray,
+    alternative: str = "less",
+) -> dict[str, float | int | bool]:
     """
     Non-parametric Wilcoxon Signed-Rank Test on paired forecast error losses.
     Testing H0: Median loss difference is zero vs H1: Model loss < Baseline loss ('less').
@@ -57,7 +57,7 @@ def wilcoxon_signed_rank_test(
             "statistic": float("nan"),
             "p_value": float("nan"),
             "significant_01": False,
-            "significant_05": False
+            "significant_05": False,
         }
     res = stats.wilcoxon(d, alternative=alternative)
     return {
@@ -66,12 +66,13 @@ def wilcoxon_signed_rank_test(
         "p_value": float(res.pvalue),
         "significant_01": bool(res.pvalue < 0.01),
         "significant_05": bool(res.pvalue < 0.05),
-        "mean_diff": float(np.mean(diff[np.isfinite(diff)]))
+        "mean_diff": float(np.mean(diff[np.isfinite(diff)])),
     }
 
 
-def dm_hac(loss_model, loss_baseline, horizon: int = 1,
-           accumulation_scale: int = 1) -> dict:
+def dm_hac(
+    loss_model, loss_baseline, horizon: int = 1, accumulation_scale: int = 1
+) -> dict:
     """Two-sided Diebold-Mariano test for paired loss series.
 
     ``horizon`` controls the Newey-West truncation lag (horizon - 1). Pairwise
@@ -101,17 +102,25 @@ def dm_hac(loss_model, loss_baseline, horizon: int = 1,
     if long_run <= 0:
         return {"n": n, "statistic": float("nan"), "p_value": float("nan")}
     statistic = d.mean() / np.sqrt(long_run / n)
-    correction = np.sqrt(max((n + 1 - 2 * horizon + horizon * (horizon - 1) / n) / n, 0))
+    correction = np.sqrt(
+        max((n + 1 - 2 * horizon + horizon * (horizon - 1) / n) / n, 0)
+    )
     statistic *= correction
     # Use a finite-sample Student-t reference distribution.
     p_value = float(2 * stats.t.sf(abs(statistic), df=n - 1))
-    return {"n": n, "effective_n": effective_sample_size(d), "hac_bandwidth": lag,
-            "statistic": float(statistic), "p_value": float(p_value),
-            "mean_loss_difference": float(d.mean())}
+    return {
+        "n": n,
+        "effective_n": effective_sample_size(d),
+        "hac_bandwidth": lag,
+        "statistic": float(statistic),
+        "p_value": float(p_value),
+        "mean_loss_difference": float(d.mean()),
+    }
 
 
-def paired_block_bootstrap_rmse_ci(prediction, baseline, target, groups,
-                                   n_boot: int = 2000, seed: int = 123) -> dict:
+def paired_block_bootstrap_rmse_ci(
+    prediction, baseline, target, groups, n_boot: int = 2000, seed: int = 123
+) -> dict:
     """Bootstrap paired RMSE difference by site-year blocks to reduce overlap leakage."""
     p, b, y = map(lambda x: np.asarray(x, dtype=float), (prediction, baseline, target))
     groups = np.asarray(groups)
@@ -119,19 +128,28 @@ def paired_block_bootstrap_rmse_ci(prediction, baseline, target, groups,
     p, b, y, groups = p[valid], b[valid], y[valid], groups[valid]
     unique = np.unique(groups)
     if len(unique) < 2:
-        return {"n_blocks": int(len(unique)), "rmse_difference_ci95": [float("nan"), float("nan")]}
+        return {
+            "n_blocks": len(unique),
+            "rmse_difference_ci95": [float("nan"), float("nan")],
+        }
     indices = {g: np.flatnonzero(groups == g) for g in unique}
     rng = np.random.default_rng(seed)
     diffs = np.empty(n_boot)
     for i in range(n_boot):
         chosen = rng.choice(unique, size=len(unique), replace=True)
         rows = np.concatenate([indices[g] for g in chosen])
-        diffs[i] = np.sqrt(np.mean((p[rows] - y[rows]) ** 2)) - np.sqrt(np.mean((b[rows] - y[rows]) ** 2))
-    return {"n_blocks": int(len(unique)), "rmse_difference_ci95": np.quantile(diffs, [.025, .975]).tolist()}
+        diffs[i] = np.sqrt(np.mean((p[rows] - y[rows]) ** 2)) - np.sqrt(
+            np.mean((b[rows] - y[rows]) ** 2)
+        )
+    return {
+        "n_blocks": len(unique),
+        "rmse_difference_ci95": np.quantile(diffs, [0.025, 0.975]).tolist(),
+    }
 
 
-def count_drought_episodes(metadata, targets, mask, scale_index: int,
-                           threshold: float = -1.0) -> int:
+def count_drought_episodes(
+    metadata, targets, mask, scale_index: int, threshold: float = -1.0
+) -> int:
     """Count independent per-site drought runs in chronological target records."""
     episodes = 0
     grouped = {}
@@ -141,10 +159,14 @@ def count_drought_episodes(metadata, targets, mask, scale_index: int,
         records = {}
         for i in rows:
             for lead, date in enumerate(metadata[i]["target_dates"]):
-                if mask[i, scale_index, lead] and np.isfinite(targets[i, scale_index, lead]):
+                if mask[i, scale_index, lead] and np.isfinite(
+                    targets[i, scale_index, lead]
+                ):
                     month = date[:7]
-                    records[month] = min(records.get(month, float("inf")),
-                                         float(targets[i, scale_index, lead]))
+                    records[month] = min(
+                        records.get(month, float("inf")),
+                        float(targets[i, scale_index, lead]),
+                    )
         previous_month = None
         in_episode = False
         for month, value in sorted(records.items()):

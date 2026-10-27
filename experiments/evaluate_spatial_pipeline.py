@@ -9,18 +9,15 @@ Produces paper-ready metrics with bootstrap confidence intervals, event classifi
 scores across thresholds (-1.0, -1.5, -2.0), probabilistic calibration diagnostics,
 and cell count summaries.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
-import pandas as pd
-from sklearn.linear_model import Ridge
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 import xarray as xr
 
 from data.spatial import SCALES
@@ -83,7 +80,11 @@ def evaluate_spatial_evidence(
         "cell_counts": {},
     }
 
-    n_valid_cells = int(evidence_ds["valid_cell_mask"].values.sum()) if "valid_cell_mask" in evidence_ds else 0
+    n_valid_cells = (
+        int(evidence_ds["valid_cell_mask"].values.sum())
+        if "valid_cell_mask" in evidence_ds
+        else 0
+    )
     report["cell_counts"]["total_valid_cells"] = n_valid_cells
     report["cell_counts"]["test_time_steps"] = len(evidence_ds["time"])
 
@@ -116,7 +117,11 @@ def evaluate_spatial_evidence(
         nse = calculate_nse(y_pred, y_true)
         kge = calculate_kge(y_pred, y_true)
         bias = float(np.mean(y_pred - y_true))
-        corr = float(np.corrcoef(y_pred, y_true)[0, 1]) if np.std(y_pred) > 1e-6 and np.std(y_true) > 1e-6 else float("nan")
+        corr = (
+            float(np.corrcoef(y_pred, y_true)[0, 1])
+            if np.std(y_pred) > 1e-6 and np.std(y_true) > 1e-6
+            else float("nan")
+        )
 
         report["per_scale"][scale] = {
             "n_samples": n_samples,
@@ -175,18 +180,25 @@ def evaluate_spatial_evidence(
             for thresh in THRESHOLDS:
                 cond_mask = y_true <= thresh
                 if cond_mask.sum() > 0:
-                    cov_cond = float(np.mean((y_true[cond_mask] >= cqr_lo[cond_mask]) & (y_true[cond_mask] <= cqr_hi[cond_mask])))
+                    cov_cond = float(
+                        np.mean(
+                            (y_true[cond_mask] >= cqr_lo[cond_mask])
+                            & (y_true[cond_mask] <= cqr_hi[cond_mask])
+                        )
+                    )
                     cond_coverage[f"event_coverage_thresh_{thresh}"] = cov_cond
                 else:
                     cond_coverage[f"event_coverage_thresh_{thresh}"] = float("nan")
             prob_report["event_conditioned_coverage"] = cond_coverage
 
         if q10_var in evidence_ds and q50_var in evidence_ds and q90_var in evidence_ds:
-            q_arr = np.column_stack([
-                evidence_ds[q10_var].values.flatten()[valid],
-                evidence_ds[q50_var].values.flatten()[valid],
-                evidence_ds[q90_var].values.flatten()[valid],
-            ])
+            q_arr = np.column_stack(
+                [
+                    evidence_ds[q10_var].values.flatten()[valid],
+                    evidence_ds[q50_var].values.flatten()[valid],
+                    evidence_ds[q90_var].values.flatten()[valid],
+                ]
+            )
             pb_loss = pinball_score(q_arr, y_true, [0.1, 0.5, 0.9])
             crps_val = crps_from_quantiles(q_arr, y_true, [0.1, 0.5, 0.9])
             prob_report["quantile_scoring"] = {
@@ -200,9 +212,14 @@ def evaluate_spatial_evidence(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate gridded spatial evidence product")
+    parser = argparse.ArgumentParser(
+        description="Evaluate gridded spatial evidence product"
+    )
     parser.add_argument("evidence_nc", help="Path to evidence NetCDF file")
-    parser.add_argument("--output-json", default="results/spatial_pipeline/tables/spatial_evaluation.json")
+    parser.add_argument(
+        "--output-json",
+        default="results/spatial_pipeline/tables/spatial_evaluation.json",
+    )
     args = parser.parse_args()
 
     ds = xr.open_dataset(args.evidence_nc)

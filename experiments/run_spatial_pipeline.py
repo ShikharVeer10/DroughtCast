@@ -11,20 +11,20 @@ Workflow:
 8. Render publication-quality multi-format figures (PNG, PDF, EPS)
 9. Export paper tables and write reproducible experiment manifest
 """
+
 from __future__ import annotations
 
 import argparse
 import datetime
 import json
 import logging
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import torch
-import yaml
 import xarray as xr
+import yaml
 
-from data.spatial import SCALES
 from data.spatial_dataset import SpatialGridDataset
 from data.spatial_download import (
     check_gadm_boundaries,
@@ -43,9 +43,11 @@ from experiments.evaluate_spatial_pipeline import evaluate_spatial_evidence
 from experiments.generate_spatial_tables import generate_tables
 from experiments.plot_spatial_pipeline import generate_all_spatial_figures
 from models.forecaster import DroughtCast
-from utils.artifacts import artifact_metadata, config_hash
+from utils.artifacts import config_hash
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("SpatialPipeline")
 
 
@@ -54,7 +56,9 @@ def verify_sources_or_raise(cfg: dict) -> dict:
     spatial_cfg = cfg.get("spatial", {})
     spei_dir = spatial_cfg.get("speibase_dir", "data/raw/spatial/speibase")
     tc_dir = spatial_cfg.get("terraclimate_dir", "data/raw/spatial/terraclimate")
-    dem_path = spatial_cfg.get("dem_path", "data/raw/spatial/dem/copernicus_dem_glo30.tif")
+    dem_path = spatial_cfg.get(
+        "dem_path", "data/raw/spatial/dem/copernicus_dem_glo30.tif"
+    )
     gadm_dir = spatial_cfg.get("boundaries_dir", "data/raw/spatial/gadm")
 
     spec = load_sources_spec()
@@ -64,15 +68,23 @@ def verify_sources_or_raise(cfg: dict) -> dict:
     gadm_stat = check_gadm_boundaries(gadm_dir)
 
     manifest = generate_provenance_manifest(
-        spec, spei_stat, tc_stat, dem_stat, gadm_stat,
-        spatial_cfg.get("output_manifest", "data/spatial_data_manifest.json")
+        spec,
+        spei_stat,
+        tc_stat,
+        dem_stat,
+        gadm_stat,
+        spatial_cfg.get("output_manifest", "data/spatial_data_manifest.json"),
     )
 
     blockers = []
     if not spei_stat["available"]:
-        blockers.append(f"SPEIbase targets missing: {spei_stat['missing']} from {spei_dir}")
+        blockers.append(
+            f"SPEIbase targets missing: {spei_stat['missing']} from {spei_dir}"
+        )
     if not tc_stat["available"]:
-        blockers.append(f"TerraClimate predictors missing: {tc_stat['missing']} from {tc_dir}")
+        blockers.append(
+            f"TerraClimate predictors missing: {tc_stat['missing']} from {tc_dir}"
+        )
     if not dem_stat["available"]:
         blockers.append(f"Copernicus DEM missing from {dem_path}")
 
@@ -100,11 +112,15 @@ def execute_pipeline_from_harmonized(
     holdout_bbox = None
     if holdout_cfg.get("enabled", False):
         holdout_bbox = (
-            holdout_cfg["lat_min"], holdout_cfg["lat_max"],
-            holdout_cfg["lon_min"], holdout_cfg["lon_max"],
+            holdout_cfg["lat_min"],
+            holdout_cfg["lat_max"],
+            holdout_cfg["lon_min"],
+            holdout_cfg["lon_max"],
         )
 
-    feature_vars = cfg.get("data", {}).get("features", ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN"])
+    feature_vars = cfg.get("data", {}).get(
+        "features", ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN"]
+    )
     dataset = SpatialGridDataset(
         ds=ds,
         feature_vars=feature_vars,
@@ -173,32 +189,46 @@ def execute_pipeline_from_harmonized(
 
     # Figures
     logger.info("Rendering publication-quality spatial figures (PNG, PDF, EPS)...")
-    boundaries_path = cfg.get("spatial", {}).get("boundaries_dir", "data/raw/spatial/gadm")
+    boundaries_path = cfg.get("spatial", {}).get(
+        "boundaries_dir", "data/raw/spatial/gadm"
+    )
     ind_gpkg = Path(boundaries_path) / "IND.gpkg"
-    generate_all_spatial_figures(evidence_nc, fig_dir, ind_gpkg if ind_gpkg.is_file() else None)
+    generate_all_spatial_figures(
+        evidence_nc, fig_dir, ind_gpkg if ind_gpkg.is_file() else None
+    )
 
     # Experiment Manifest
     manifest = {
         "experiment_name": cfg.get("experiment", {}).get("name", "spatial_evidence"),
-        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         "config": cfg,
         "config_hash": config_hash(cfg),
         "evidence_product": str(evidence_nc),
         "sample_counts": counts,
         "evaluation_summary": eval_report["per_scale"],
     }
-    (out_dir / "spatial_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (out_dir / "spatial_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
     logger.info("Spatial pipeline execution completed successfully!")
     return manifest
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="End-to-end spatial pipeline runner")
-    parser.add_argument("--config", default="configs/spatial_config.yaml", help="Configuration YAML")
-    parser.add_argument("--harmonized-nc", default=None, help="Path to harmonized NetCDF if available")
+    parser.add_argument(
+        "--config", default="configs/spatial_config.yaml", help="Configuration YAML"
+    )
+    parser.add_argument(
+        "--harmonized-nc", default=None, help="Path to harmonized NetCDF if available"
+    )
     parser.add_argument("--checkpoint", default=None, help="Path to model checkpoint")
-    parser.add_argument("--output-dir", default="results/spatial_pipeline", help="Output directory")
-    parser.add_argument("--check-only", action="store_true", help="Only check raw sources and manifest")
+    parser.add_argument(
+        "--output-dir", default="results/spatial_pipeline", help="Output directory"
+    )
+    parser.add_argument(
+        "--check-only", action="store_true", help="Only check raw sources and manifest"
+    )
     args = parser.parse_args()
 
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
@@ -214,9 +244,15 @@ def main() -> None:
 
         if args.check_only or not args.harmonized_nc:
             print("\n" + "=" * 70)
-            print("STATUS: Continuous Spatial Pipeline Blocked Pending Raw Data Download")
-            print("Reason: In accordance with scientific non-fabrication standards, continuous")
-            print("spatial predictions cannot be generated without real gridded observations.")
+            print(
+                "STATUS: Continuous Spatial Pipeline Blocked Pending Raw Data Download"
+            )
+            print(
+                "Reason: In accordance with scientific non-fabrication standards, continuous"
+            )
+            print(
+                "spatial predictions cannot be generated without real gridded observations."
+            )
             print("=" * 70 + "\n")
             sys.exit(0)
 

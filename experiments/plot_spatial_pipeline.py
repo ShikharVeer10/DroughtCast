@@ -11,11 +11,11 @@ Renders all required conference-ready figures in PNG (300 DPI), vector PDF, and 
 8. Reliability diagrams (empirical frequency vs predicted probability)
 9. Regional summary map with administrative boundary overlays
 """
+
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -83,8 +83,14 @@ def plot_observed_predicted_error(
 
     # 1. Observed SPEI Map
     fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
-    im = ax.pcolormesh(ds["lon"], ds["lat"], obs, cmap="RdYlBu", vmin=-3.0, vmax=3.0, shading="auto")
-    ax.set_title(f"Observed {scale.upper().replace('_', '-')} ({date_str})", fontsize=13, fontweight="bold")
+    im = ax.pcolormesh(
+        ds["lon"], ds["lat"], obs, cmap="RdYlBu", vmin=-3.0, vmax=3.0, shading="auto"
+    )
+    ax.set_title(
+        f"Observed {scale.upper().replace('_', '-')} ({date_str})",
+        fontsize=13,
+        fontweight="bold",
+    )
     ax.set_xlabel("Longitude (°E)")
     ax.set_ylabel("Latitude (°N)")
     ax.grid(alpha=0.25)
@@ -94,8 +100,14 @@ def plot_observed_predicted_error(
 
     # 2. Predicted SPEI Map
     fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
-    im = ax.pcolormesh(ds["lon"], ds["lat"], pred, cmap="RdYlBu", vmin=-3.0, vmax=3.0, shading="auto")
-    ax.set_title(f"DroughtCast Predicted {scale.upper().replace('_', '-')} ({date_str})", fontsize=13, fontweight="bold")
+    im = ax.pcolormesh(
+        ds["lon"], ds["lat"], pred, cmap="RdYlBu", vmin=-3.0, vmax=3.0, shading="auto"
+    )
+    ax.set_title(
+        f"DroughtCast Predicted {scale.upper().replace('_', '-')} ({date_str})",
+        fontsize=13,
+        fontweight="bold",
+    )
     ax.set_xlabel("Longitude (°E)")
     ax.set_ylabel("Latitude (°N)")
     ax.grid(alpha=0.25)
@@ -105,8 +117,14 @@ def plot_observed_predicted_error(
 
     # 3. Prediction Error Map
     fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
-    im = ax.pcolormesh(ds["lon"], ds["lat"], err, cmap="coolwarm", vmin=-2.0, vmax=2.0, shading="auto")
-    ax.set_title(f"Prediction Error (Predicted − Observed) {scale.upper().replace('_', '-')}", fontsize=13, fontweight="bold")
+    im = ax.pcolormesh(
+        ds["lon"], ds["lat"], err, cmap="coolwarm", vmin=-2.0, vmax=2.0, shading="auto"
+    )
+    ax.set_title(
+        f"Prediction Error (Predicted − Observed) {scale.upper().replace('_', '-')}",
+        fontsize=13,
+        fontweight="bold",
+    )
     ax.set_xlabel("Longitude (°E)")
     ax.set_ylabel("Latitude (°N)")
     ax.grid(alpha=0.25)
@@ -132,8 +150,14 @@ def plot_probability_and_uncertainty(
 
     # 1. Calibrated drought probability map
     fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
-    im = ax.pcolormesh(ds["lon"], ds["lat"], prob, cmap="YlOrRd", vmin=0.0, vmax=1.0, shading="auto")
-    ax.set_title(f"Calibrated P(SPEI ≤ -1.0) Drought Probability ({date_str})", fontsize=13, fontweight="bold")
+    im = ax.pcolormesh(
+        ds["lon"], ds["lat"], prob, cmap="YlOrRd", vmin=0.0, vmax=1.0, shading="auto"
+    )
+    ax.set_title(
+        f"Calibrated P(SPEI ≤ -1.0) Drought Probability ({date_str})",
+        fontsize=13,
+        fontweight="bold",
+    )
     ax.set_xlabel("Longitude (°E)")
     ax.set_ylabel("Latitude (°N)")
     ax.grid(alpha=0.25)
@@ -143,8 +167,14 @@ def plot_probability_and_uncertainty(
 
     # 2. Uncertainty / interval width map
     fig, ax = plt.subplots(figsize=(8, 6), constrained_layout=True)
-    im = ax.pcolormesh(ds["lon"], ds["lat"], width, cmap="magma_r", vmin=0.5, vmax=3.0, shading="auto")
-    ax.set_title(f"Conformal Uncertainty: 80% CQR Interval Width ({date_str})", fontsize=13, fontweight="bold")
+    im = ax.pcolormesh(
+        ds["lon"], ds["lat"], width, cmap="magma_r", vmin=0.5, vmax=3.0, shading="auto"
+    )
+    ax.set_title(
+        f"Conformal Uncertainty: 80% CQR Interval Width ({date_str})",
+        fontsize=13,
+        fontweight="bold",
+    )
     ax.set_xlabel("Longitude (°E)")
     ax.set_ylabel("Latitude (°N)")
     ax.grid(alpha=0.25)
@@ -162,18 +192,34 @@ def plot_threshold_comparisons(
 ) -> None:
     pred = ds[f"pred_{scale}"].isel(time=time_idx).values
     fig, axes = plt.subplots(1, 3, figsize=(18, 5), constrained_layout=True)
-    thresholds = [(-1.0, "Moderate (≤ -1.0)"), (-1.5, "Severe (≤ -1.5)"), (-2.0, "Extreme (≤ -2.0)")]
+    thresholds = [
+        (-1.0, "Moderate (≤ -1.0)"),
+        (-1.5, "Severe (≤ -1.5)"),
+        (-2.0, "Extreme (≤ -2.0)"),
+    ]
 
     for ax, (th, title) in zip(axes, thresholds):
         binary = (pred <= th).astype(float)
-        im = ax.pcolormesh(ds["lon"], ds["lat"], binary, cmap="OrRd", vmin=0.0, vmax=1.0, shading="auto")
+        im = ax.pcolormesh(
+            ds["lon"],
+            ds["lat"],
+            binary,
+            cmap="OrRd",
+            vmin=0.0,
+            vmax=1.0,
+            shading="auto",
+        )
         ax.set_title(f"Drought Regime: {title}", fontsize=12, fontweight="bold")
         ax.set_xlabel("Longitude (°E)")
         ax.set_ylabel("Latitude (°N)")
         ax.grid(alpha=0.25)
         overlay_boundaries(ax, boundaries)
 
-    fig.suptitle(f"Continuous Spatial Drought Delineation Across Severity Regimes ({scale.upper()})", fontsize=14, fontweight="bold")
+    fig.suptitle(
+        f"Continuous Spatial Drought Delineation Across Severity Regimes ({scale.upper()})",
+        fontsize=14,
+        fontweight="bold",
+    )
     save_multiformat(fig, output_dir / f"figure07_threshold_comparison_{scale}")
 
 
@@ -199,13 +245,25 @@ def plot_spatial_reliability(
         x = [r["mean_predicted"] for r in rel_rows]
         y = [r["observed_frequency"] for r in rel_rows]
         counts = [r["count"] for r in rel_rows]
-        ax.plot(x, y, "s-", color="#1f77b4", label=f"DroughtCast ({scale.upper()})", linewidth=2, markersize=7)
+        ax.plot(
+            x,
+            y,
+            "s-",
+            color="#1f77b4",
+            label=f"DroughtCast ({scale.upper()})",
+            linewidth=2,
+            markersize=7,
+        )
 
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.set_xlabel("Mean Forecast Probability", fontsize=11)
     ax.set_ylabel("Observed Drought Frequency", fontsize=11)
-    ax.set_title(f"Spatial Event Reliability Diagram ({scale.upper()})", fontsize=12, fontweight="bold")
+    ax.set_title(
+        f"Spatial Event Reliability Diagram ({scale.upper()})",
+        fontsize=12,
+        fontweight="bold",
+    )
     ax.legend(loc="upper left")
     ax.grid(alpha=0.3)
     save_multiformat(fig, output_dir / f"figure08_reliability_diagram_{scale}")
@@ -225,15 +283,25 @@ def plot_regional_summary(
 
     # Elevation with boundaries
     im0 = axes[0].pcolormesh(ds["lon"], ds["lat"], elev, cmap="terrain", shading="auto")
-    axes[0].set_title("Regional Topography & Administrative Boundaries", fontsize=12, fontweight="bold")
+    axes[0].set_title(
+        "Regional Topography & Administrative Boundaries",
+        fontsize=12,
+        fontweight="bold",
+    )
     axes[0].set_xlabel("Longitude (°E)")
     axes[0].set_ylabel("Latitude (°N)")
     overlay_boundaries(axes[0], boundaries)
     fig.colorbar(im0, ax=axes[0], label="Elevation (m)")
 
     # Drought forecast with boundaries
-    im1 = axes[1].pcolormesh(ds["lon"], ds["lat"], pred, cmap="RdYlBu", vmin=-3.0, vmax=3.0, shading="auto")
-    axes[1].set_title(f"Continuous Drought Forecast & Administrative Boundaries", fontsize=12, fontweight="bold")
+    im1 = axes[1].pcolormesh(
+        ds["lon"], ds["lat"], pred, cmap="RdYlBu", vmin=-3.0, vmax=3.0, shading="auto"
+    )
+    axes[1].set_title(
+        "Continuous Drought Forecast & Administrative Boundaries",
+        fontsize=12,
+        fontweight="bold",
+    )
     axes[1].set_xlabel("Longitude (°E)")
     axes[1].set_ylabel("Latitude (°N)")
     overlay_boundaries(axes[1], boundaries)
@@ -250,7 +318,11 @@ def generate_all_spatial_figures(
     ds = xr.open_dataset(evidence_nc)
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    b_path = Path(boundaries_gpkg) if boundaries_gpkg and Path(boundaries_gpkg).is_file() else None
+    b_path = (
+        Path(boundaries_gpkg)
+        if boundaries_gpkg and Path(boundaries_gpkg).is_file()
+        else None
+    )
 
     plot_elevation_map(ds, out_dir, boundaries=b_path)
     for scale in SCALES:
@@ -262,7 +334,9 @@ def generate_all_spatial_figures(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate publication-ready spatial figures")
+    parser = argparse.ArgumentParser(
+        description="Generate publication-ready spatial figures"
+    )
     parser.add_argument("evidence_nc", help="Spatial evidence NetCDF file")
     parser.add_argument("--output-dir", default="results/spatial_pipeline/figures")
     parser.add_argument("--boundaries", default="data/raw/spatial/gadm/IND.gpkg")

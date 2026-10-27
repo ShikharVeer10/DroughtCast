@@ -2,18 +2,17 @@
 
 deterministic preprocessing, spatial inference, calibration, and artifact compliance.
 """
+
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 import pytest
-import torch
 import xarray as xr
 
-from data.spatial import load_spatial_grid, spatial_metrics, SCALES
+from data.spatial import SCALES, load_spatial_grid, spatial_metrics
 from data.spatial_dataset import SpatialGridDataset
 from data.spatial_download import (
-    check_gadm_boundaries,
     verify_elevation_file,
     verify_speibase_files,
     verify_terraclimate_files,
@@ -24,7 +23,6 @@ from data.spatial_inference import (
     run_cell_inference,
 )
 from data.spatial_preprocess import (
-    create_harmonized_dataset,
     enforce_leakage_controls,
     validate_coordinates,
     verify_temporal_splits,
@@ -44,17 +42,40 @@ def mock_spatial_dataset(tmp_path):
     rng = np.random.default_rng(42)
 
     data_vars = {
-        "PRECTOTCORR": (("time", "lat", "lon"), rng.uniform(10.0, 100.0, size=shape).astype(np.float32)),
-        "T2M": (("time", "lat", "lon"), rng.uniform(15.0, 35.0, size=shape).astype(np.float32)),
-        "T2MDEW": (("time", "lat", "lon"), rng.uniform(10.0, 25.0, size=shape).astype(np.float32)),
-        "WS10M": (("time", "lat", "lon"), rng.uniform(1.0, 5.0, size=shape).astype(np.float32)),
-        "ALLSKY_SFC_SW_DWN": (("time", "lat", "lon"), rng.uniform(15.0, 25.0, size=shape).astype(np.float32)),
-        "elevation": (("lat", "lon"), np.array([[500, 600, 700], [550, 650, 750], [520, 620, 720]], dtype=np.float32)),
+        "PRECTOTCORR": (
+            ("time", "lat", "lon"),
+            rng.uniform(10.0, 100.0, size=shape).astype(np.float32),
+        ),
+        "T2M": (
+            ("time", "lat", "lon"),
+            rng.uniform(15.0, 35.0, size=shape).astype(np.float32),
+        ),
+        "T2MDEW": (
+            ("time", "lat", "lon"),
+            rng.uniform(10.0, 25.0, size=shape).astype(np.float32),
+        ),
+        "WS10M": (
+            ("time", "lat", "lon"),
+            rng.uniform(1.0, 5.0, size=shape).astype(np.float32),
+        ),
+        "ALLSKY_SFC_SW_DWN": (
+            ("time", "lat", "lon"),
+            rng.uniform(15.0, 25.0, size=shape).astype(np.float32),
+        ),
+        "elevation": (
+            ("lat", "lon"),
+            np.array(
+                [[500, 600, 700], [550, 650, 750], [520, 620, 720]], dtype=np.float32
+            ),
+        ),
     }
 
     # Add targets
     for s in SCALES:
-        data_vars[f"obs_{s}"] = (("time", "lat", "lon"), rng.normal(0.0, 1.0, size=shape).astype(np.float32))
+        data_vars[f"obs_{s}"] = (
+            ("time", "lat", "lon"),
+            rng.normal(0.0, 1.0, size=shape).astype(np.float32),
+        )
 
     coords = {"time": dates, "lat": lats, "lon": lons}
     ds = xr.Dataset(data_vars, coords=coords)
@@ -78,7 +99,9 @@ def test_coordinate_validation_monotonicity_and_duplicates():
         validate_coordinates(ds_dup)
 
     # Non-monotonic
-    ds_nonmono = xr.Dataset(coords={"lat": [10.0, 12.0, 11.0], "lon": lons, "time": [0, 1]})
+    ds_nonmono = xr.Dataset(
+        coords={"lat": [10.0, 12.0, 11.0], "lon": lons, "time": [0, 1]}
+    )
     with pytest.raises(ValueError, match="monotonic"):
         validate_coordinates(ds_nonmono)
 

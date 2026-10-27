@@ -1,8 +1,9 @@
 """Shared pyramidal LSTM encoder: LSTM(h1) -> Dropout -> LSTM(h2)."""
+
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 
 class SharedLSTMEncoder(nn.Module):
@@ -33,7 +34,13 @@ class SharedLSTMEncoder(nn.Module):
 class CapacityMatchedGRUEncoder(nn.Module):
     """Ablation: two-layer GRU 64 -> 32 (capacity-matched to the LSTM stack)."""
 
-    def __init__(self, input_size: int = 12, hidden1: int = 64, hidden2: int = 32, dropout: float = 0.2):
+    def __init__(
+        self,
+        input_size: int = 12,
+        hidden1: int = 64,
+        hidden2: int = 32,
+        dropout: float = 0.2,
+    ):
         super().__init__()
         self.gru1 = nn.GRU(input_size, hidden1, batch_first=True)
         self.dropout = nn.Dropout(dropout)
@@ -50,12 +57,20 @@ class CapacityMatchedGRUEncoder(nn.Module):
 class CapacityMatchedTransformerEncoder(nn.Module):
     """Ablation: projected Transformer encoder with positional encoding."""
 
-    def __init__(self, input_size: int = 12, hidden2: int = 32, dropout: float = 0.2, max_len: int = 64):
+    def __init__(
+        self,
+        input_size: int = 12,
+        hidden2: int = 32,
+        dropout: float = 0.2,
+        max_len: int = 64,
+    ):
         super().__init__()
         self.input_projection = nn.Linear(input_size, hidden2)
         self.pos = nn.Parameter(torch.zeros(1, max_len, hidden2))
         nn.init.normal_(self.pos, std=0.02)
-        layer = nn.TransformerEncoderLayer(hidden2, nhead=4, batch_first=True, dropout=dropout)
+        layer = nn.TransformerEncoderLayer(
+            hidden2, nhead=4, batch_first=True, dropout=dropout
+        )
         self.encoder = nn.TransformerEncoder(layer, num_layers=2)
         self.hidden2 = hidden2
 

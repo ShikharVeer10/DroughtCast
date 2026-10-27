@@ -1,4 +1,5 @@
 """Allowed configuration keys and validation helpers."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -7,30 +8,64 @@ ALLOWED_TOP = {"experiment", "sites", "data", "model", "training"}
 
 ALLOWED_EXPERIMENT = {"name", "seed"}
 ALLOWED_DATA = {
-    "path", "metadata_path", "start_year", "end_year", "features", "seq_len",
-    "forecast_steps", "input_dim", "site_filter",
+    "path",
+    "metadata_path",
+    "start_year",
+    "end_year",
+    "features",
+    "seq_len",
+    "forecast_steps",
+    "input_dim",
+    "site_filter",
 }
 ALLOWED_MODEL = {
-    "input_dim", "hidden_dim_1", "hidden_dim_2", "dropout", "attention",
-    "encoder", "heads", "head_mode", "use_cascaded_decoder", "variable_gate",
-    "separate_encoders", "quantiles", "spei3_dropout", "static_context",
-    "input_extras", "consistency_weight",
+    "input_dim",
+    "hidden_dim_1",
+    "hidden_dim_2",
+    "dropout",
+    "attention",
+    "encoder",
+    "heads",
+    "head_mode",
+    "use_cascaded_decoder",
+    "variable_gate",
+    "separate_encoders",
+    "quantiles",
+    "spei3_dropout",
+    "static_context",
+    "input_extras",
+    "consistency_weight",
 }
 ALLOWED_TRAINING = {
-    "batch_size", "epochs", "learning_rate", "weight_decay",
-    "early_stopping_patience", "lr_patience", "extreme_weight",
-    "extreme_threshold", "checkpoint_dir", "loss", "task_weighting",
+    "batch_size",
+    "epochs",
+    "learning_rate",
+    "weight_decay",
+    "early_stopping_patience",
+    "lr_patience",
+    "extreme_weight",
+    "extreme_threshold",
+    "checkpoint_dir",
+    "loss",
+    "task_weighting",
 }
 
 # Keys removed from the diagram config; reject if present.
 DEAD_MODEL_KEYS = {
-    "hidden_dim", "out_hidden_dim", "num_layers", "num_quantiles",
-    "use_teleconnection_gate", "use_multi_horizon_attn", "use_cascade_decoder",
+    "hidden_dim",
+    "out_hidden_dim",
+    "num_layers",
+    "num_quantiles",
+    "use_teleconnection_gate",
+    "use_multi_horizon_attn",
+    "use_cascade_decoder",
     "forecast_steps",  # lives under data
 }
 
 
-def _reject_unknown(section: str, values: dict[str, Any] | None, allowed: set[str]) -> None:
+def _reject_unknown(
+    section: str, values: dict[str, Any] | None, allowed: set[str]
+) -> None:
     if not values:
         return
     unknown = set(values) - allowed

@@ -1,12 +1,14 @@
 """Reproducibility metadata and checkpoint compatibility helpers."""
+
 from __future__ import annotations
 
 import hashlib
 import json
 import subprocess
 import sys
-import torch
 from pathlib import Path
+
+import torch
 
 
 def sha256_file(path: str | Path) -> str:
@@ -18,7 +20,9 @@ def sha256_file(path: str | Path) -> str:
 
 
 def config_hash(config: dict) -> str:
-    payload = json.dumps(config, sort_keys=True, separators=(",", ":"), default=str).encode()
+    payload = json.dumps(
+        config, sort_keys=True, separators=(",", ":"), default=str
+    ).encode()
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -49,14 +53,17 @@ def architecture_fingerprint(config: dict) -> str:
     return config_hash(fields)
 
 
-def artifact_metadata(config: dict, dataset_path: str | Path | None = None,
-                      seed: int | None = None) -> dict:
+def artifact_metadata(
+    config: dict, dataset_path: str | Path | None = None, seed: int | None = None
+) -> dict:
     return {
         "git_commit": git_commit(),
         "config_hash": config_hash(config),
         "architecture_fingerprint": architecture_fingerprint(config),
         "dataset_path": str(dataset_path) if dataset_path else None,
-        "dataset_sha256": sha256_file(dataset_path) if dataset_path and Path(dataset_path).is_file() else None,
+        "dataset_sha256": sha256_file(dataset_path)
+        if dataset_path and Path(dataset_path).is_file()
+        else None,
         "seed": seed,
         "python": sys.version,
         "torch": torch.__version__,

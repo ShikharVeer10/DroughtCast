@@ -4,11 +4,12 @@ Runs the trained DroughtCast model on each valid grid cell independently,
 generating multi-horizon (T+1..T+4), multi-scale (SPEI-3/6/12) forecasts with
 calibrated probabilities, CQR prediction intervals, errors, and static elevation.
 """
+
 from __future__ import annotations
 
 import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -18,8 +19,7 @@ import xarray as xr
 from data.spatial import SCALES
 from data.spatial_dataset import SpatialGridDataset
 from models.forecaster import DroughtCast
-from utils.artifacts import artifact_metadata
-from utils.conformal import apply_cqr, calibrate_cqr
+from utils.conformal import calibrate_cqr
 from utils.probability import fit_isotonic_calibrator
 
 
@@ -44,29 +44,27 @@ def run_cell_inference(
                 x_val = torch.from_numpy(cell.X_val).to(device)
                 preds_val, _ = model(x_val)
                 # preds_val: dict of {scale: [B, 4, 3] or [B, 4]}
-                val_preds_dict = {
-                    s: preds_val[s].cpu().numpy() for s in SCALES
-                }
+                val_preds_dict = {s: preds_val[s].cpu().numpy() for s in SCALES}
 
             # Test predictions
             x_test = torch.from_numpy(cell.X_test).to(device)
             preds_test, aux = model(x_test)
-            test_preds_dict = {
-                s: preds_test[s].cpu().numpy() for s in SCALES
-            }
+            test_preds_dict = {s: preds_test[s].cpu().numpy() for s in SCALES}
 
-            results.append({
-                "lat": cell.lat,
-                "lon": cell.lon,
-                "elevation": cell.elevation,
-                "val_preds": val_preds_dict,
-                "val_targets": cell.Y_val,
-                "val_mask": cell.mask_val,
-                "test_preds": test_preds_dict,
-                "test_targets": cell.Y_test,
-                "test_mask": cell.mask_test,
-                "test_dates": cell.test_dates,
-            })
+            results.append(
+                {
+                    "lat": cell.lat,
+                    "lon": cell.lon,
+                    "elevation": cell.elevation,
+                    "val_preds": val_preds_dict,
+                    "val_targets": cell.Y_val,
+                    "val_mask": cell.mask_val,
+                    "test_preds": test_preds_dict,
+                    "test_targets": cell.Y_test,
+                    "test_mask": cell.mask_test,
+                    "test_dates": cell.test_dates,
+                }
+            )
 
     return {
         "cell_results": results,
@@ -141,10 +139,17 @@ def calibrate_and_conformalize(
             pooled_masks = np.concatenate(val_masks_cqr, axis=0)
             if pooled_preds.ndim == 3:
                 cqr_corrections[scale] = calibrate_cqr(
-                    pooled_preds, pooled_tars, pooled_masks, quantiles, coverage=nominal_coverage
+                    pooled_preds,
+                    pooled_tars,
+                    pooled_masks,
+                    quantiles,
+                    coverage=nominal_coverage,
                 )
 
-    return {"calibrators": val_calibrators, "cqr_corrections": cqr_corrections}, cell_results
+    return {
+        "calibrators": val_calibrators,
+        "cqr_corrections": cqr_corrections,
+    }, cell_results
 
 
 def build_evidence_netcdf(
@@ -237,7 +242,9 @@ def build_evidence_netcdf(
                     elif -1.0 >= q90_val:
                         raw_p = 0.9
                     else:
-                        raw_p = 0.1 + 0.4 * (-1.0 - q10_val) / max(q50_val - q10_val, 1e-4)
+                        raw_p = 0.1 + 0.4 * (-1.0 - q10_val) / max(
+                            q50_val - q10_val, 1e-4
+                        )
                     raw_p = float(np.clip(raw_p, 0.0, 1.0))
 
                     # Calibrated event probability
@@ -248,7 +255,9 @@ def build_evidence_netcdf(
                     grids_prob[scale][time_i, lat_i, lon_i] = cal_p
 
                     # CQR intervals
-                    if scale in cqr_corrections and np.isfinite(cqr_corrections[scale][lead_idx]):
+                    if scale in cqr_corrections and np.isfinite(
+                        cqr_corrections[scale][lead_idx]
+                    ):
                         delta = max(0.0, float(cqr_corrections[scale][lead_idx]))
                         grids_cqr_lo[scale][time_i, lat_i, lon_i] = q10_val - delta
                         grids_cqr_hi[scale][time_i, lat_i, lon_i] = q90_val + delta
@@ -258,7 +267,9 @@ def build_evidence_netcdf(
 
                 else:
                     point_val = float(pred[lead_idx])
-                    grids_prob[scale][time_i, lat_i, lon_i] = 1.0 if point_val <= -1.0 else 0.0
+                    grids_prob[scale][time_i, lat_i, lon_i] = (
+                        1.0 if point_val <= -1.0 else 0.0
+                    )
 
                 grids_pred[scale][time_i, lat_i, lon_i] = point_val
                 grids_error[scale][time_i, lat_i, lon_i] = point_val - tar
@@ -289,7 +300,7 @@ def build_evidence_netcdf(
     evidence_ds = xr.Dataset(data_vars, coords=coords)
     evidence_ds.attrs["target_lead"] = f"T+{target_lead}"
     evidence_ds.attrs["crs"] = "EPSG:4326"
-    evidence_ds.attrs["creation_date"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    evidence_ds.attrs["creation_date"] = datetime.datetime.now(datetime.UTC).isoformat()
     evidence_ds.attrs["description"] = (
         "DroughtCast gridded spatial evidence product containing observed SPEIbase, "
         "model predicted SPEI, quantiles, calibrated probabilities, CQR uncertainty intervals, "

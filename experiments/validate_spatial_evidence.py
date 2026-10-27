@@ -1,4 +1,5 @@
 """Validate a gridded spatial evidence NetCDF and write paper-safe metrics."""
+
 from __future__ import annotations
 
 import argparse

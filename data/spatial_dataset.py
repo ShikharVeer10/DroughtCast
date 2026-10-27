@@ -10,15 +10,13 @@ Rules enforced:
 - No target leakage: target SPEI values are strictly predicted into the future (T+1 to T+forecast_steps).
 - Clear reporting of cell counts, valid sample counts, and spatial mask statistics.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-import torch
-from torch.utils.data import Dataset
 import xarray as xr
 
 from data.loader import split_for_date
@@ -75,7 +73,9 @@ class SpatialGridDataset:
         window_indices = []
         for start in range(total_time - self.seq_len - self.forecast_steps + 1):
             inp_idx = np.arange(start, start + self.seq_len)
-            tar_idx = np.arange(start + self.seq_len, start + self.seq_len + self.forecast_steps)
+            tar_idx = np.arange(
+                start + self.seq_len, start + self.seq_len + self.forecast_steps
+            )
             parts = split_names[np.concatenate([inp_idx, tar_idx])]
             if parts[0] is not None and np.all(parts == parts[0]):
                 window_indices.append((start, inp_idx, tar_idx, str(parts[0])))
@@ -89,13 +89,17 @@ class SpatialGridDataset:
                 in_holdout = False
                 if self.holdout_bbox is not None:
                     h_lat_min, h_lat_max, h_lon_min, h_lon_max = self.holdout_bbox
-                    in_holdout = (h_lat_min <= lat_f <= h_lat_max) and (h_lon_min <= lon_f <= h_lon_max)
+                    in_holdout = (h_lat_min <= lat_f <= h_lat_max) and (
+                        h_lon_min <= lon_f <= h_lon_max
+                    )
 
                 # Extract feature array [T, n_features]
                 feats = []
                 for fvar in self.feature_vars:
                     if fvar in self.ds:
-                        feats.append(self.ds[fvar].isel(lat=lat_idx, lon=lon_idx).values)
+                        feats.append(
+                            self.ds[fvar].isel(lat=lat_idx, lon=lon_idx).values
+                        )
                     else:
                         feats.append(np.zeros(total_time, dtype=np.float32))
                 feats = np.column_stack(feats)
@@ -105,14 +109,19 @@ class SpatialGridDataset:
                 for s in SCALES:
                     obs_var = f"obs_{s}"
                     if obs_var in self.ds:
-                        targets.append(self.ds[obs_var].isel(lat=lat_idx, lon=lon_idx).values)
+                        targets.append(
+                            self.ds[obs_var].isel(lat=lat_idx, lon=lon_idx).values
+                        )
                     else:
                         targets.append(np.full(total_time, np.nan, dtype=np.float32))
                 targets = np.column_stack(targets)
 
                 # Check if cell has enough finite observations
                 train_mask = split_names == "train"
-                if not np.isfinite(feats[train_mask]).any() or not np.isfinite(targets[train_mask]).any():
+                if (
+                    not np.isfinite(feats[train_mask]).any()
+                    or not np.isfinite(targets[train_mask]).any()
+                ):
                     continue
 
                 # Fit normalizer strictly on train split
@@ -129,7 +138,11 @@ class SpatialGridDataset:
                     # If cell is in holdout, keep it only in test split
                     if in_holdout and split != "test":
                         continue
-                    if not in_holdout and split == "test" and self.holdout_bbox is not None:
+                    if (
+                        not in_holdout
+                        and split == "test"
+                        and self.holdout_bbox is not None
+                    ):
                         # Standard leave-region-out setup
                         pass
 
@@ -146,28 +159,58 @@ class SpatialGridDataset:
                     if split == "test":
                         windows["test"]["dates"].append(str(times[tar_idx[0]].date()))
 
-                elev = float(self.ds["elevation"].isel(lat=lat_idx, lon=lon_idx).values) if "elevation" in self.ds else float("nan")
+                elev = (
+                    float(self.ds["elevation"].isel(lat=lat_idx, lon=lon_idx).values)
+                    if "elevation" in self.ds
+                    else float("nan")
+                )
 
                 # Pack windows
                 def _to_arr(lst, shape):
-                    return np.asarray(lst, dtype=np.float32).reshape(-1, *shape) if lst else np.zeros((0, *shape), dtype=np.float32)
+                    return (
+                        np.asarray(lst, dtype=np.float32).reshape(-1, *shape)
+                        if lst
+                        else np.zeros((0, *shape), dtype=np.float32)
+                    )
 
                 def _to_mask(lst, shape):
-                    return np.asarray(lst, dtype=bool).reshape(-1, *shape) if lst else np.zeros((0, *shape), dtype=bool)
+                    return (
+                        np.asarray(lst, dtype=bool).reshape(-1, *shape)
+                        if lst
+                        else np.zeros((0, *shape), dtype=bool)
+                    )
 
                 cell_obj = SpatialCellWindows(
                     lat=lat_f,
                     lon=lon_f,
                     elevation=elev,
-                    X_train=_to_arr(windows["train"]["X"], (self.seq_len, len(self.feature_vars))),
-                    Y_train=_to_arr(windows["train"]["Y"], (len(SCALES), self.forecast_steps)),
-                    mask_train=_to_mask(windows["train"]["mask"], (len(SCALES), self.forecast_steps)),
-                    X_val=_to_arr(windows["val"]["X"], (self.seq_len, len(self.feature_vars))),
-                    Y_val=_to_arr(windows["val"]["Y"], (len(SCALES), self.forecast_steps)),
-                    mask_val=_to_mask(windows["val"]["mask"], (len(SCALES), self.forecast_steps)),
-                    X_test=_to_arr(windows["test"]["X"], (self.seq_len, len(self.feature_vars))),
-                    Y_test=_to_arr(windows["test"]["Y"], (len(SCALES), self.forecast_steps)),
-                    mask_test=_to_mask(windows["test"]["mask"], (len(SCALES), self.forecast_steps)),
+                    X_train=_to_arr(
+                        windows["train"]["X"], (self.seq_len, len(self.feature_vars))
+                    ),
+                    Y_train=_to_arr(
+                        windows["train"]["Y"], (len(SCALES), self.forecast_steps)
+                    ),
+                    mask_train=_to_mask(
+                        windows["train"]["mask"], (len(SCALES), self.forecast_steps)
+                    ),
+                    X_val=_to_arr(
+                        windows["val"]["X"], (self.seq_len, len(self.feature_vars))
+                    ),
+                    Y_val=_to_arr(
+                        windows["val"]["Y"], (len(SCALES), self.forecast_steps)
+                    ),
+                    mask_val=_to_mask(
+                        windows["val"]["mask"], (len(SCALES), self.forecast_steps)
+                    ),
+                    X_test=_to_arr(
+                        windows["test"]["X"], (self.seq_len, len(self.feature_vars))
+                    ),
+                    Y_test=_to_arr(
+                        windows["test"]["Y"], (len(SCALES), self.forecast_steps)
+                    ),
+                    mask_test=_to_mask(
+                        windows["test"]["mask"], (len(SCALES), self.forecast_steps)
+                    ),
                     test_dates=windows["test"]["dates"],
                     normalizer=normalizer,
                 )

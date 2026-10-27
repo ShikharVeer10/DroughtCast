@@ -1,11 +1,17 @@
 """Validation-calibrated conformalized quantile regression helpers."""
+
 from __future__ import annotations
 
 import numpy as np
 
 
-def calibrate_cqr(prediction: np.ndarray, target: np.ndarray, mask: np.ndarray,
-                  quantiles: list[float], coverage: float = 0.8) -> np.ndarray:
+def calibrate_cqr(
+    prediction: np.ndarray,
+    target: np.ndarray,
+    mask: np.ndarray,
+    quantiles: list[float],
+    coverage: float = 0.8,
+) -> np.ndarray:
     """Return lead-wise CQR corrections from calibration (validation) data.
 
     prediction: [sample, lead, quantile], target/mask: [sample, lead].
@@ -24,35 +30,55 @@ def calibrate_cqr(prediction: np.ndarray, target: np.ndarray, mask: np.ndarray,
         if valid.sum() == 0:
             corrections.append(float("nan"))
             continue
-        score = np.maximum(prediction[valid, lead, lo_idx] - target[valid, lead],
-                           target[valid, lead] - prediction[valid, lead, hi_idx])
+        score = np.maximum(
+            prediction[valid, lead, lo_idx] - target[valid, lead],
+            target[valid, lead] - prediction[valid, lead, hi_idx],
+        )
         rank = int(np.ceil((len(score) + 1) * coverage))
         # If the finite-sample conformal rank exceeds n, the conservative
         # correction is +infinity; clipping to n loses the stated guarantee.
-        corrections.append(float("inf") if rank > len(score) else
-                           float(np.partition(score, rank - 1)[rank - 1]))
+        corrections.append(
+            float("inf")
+            if rank > len(score)
+            else float(np.partition(score, rank - 1)[rank - 1])
+        )
     return np.asarray(corrections)
 
 
-def apply_cqr(prediction: np.ndarray, corrections: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def apply_cqr(
+    prediction: np.ndarray, corrections: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
     if not np.isfinite(corrections).all():
-        raise ValueError("CQR corrections must be finite; validation sample is too small for requested coverage")
+        raise ValueError(
+            "CQR corrections must be finite; validation sample is too small for requested coverage"
+        )
     lo = 0
     hi = prediction.shape[-1] - 1
     delta = corrections.reshape(1, -1)
     return prediction[:, :, lo] - delta, prediction[:, :, hi] + delta
 
 
-def interval_metrics(lower: np.ndarray, upper: np.ndarray, target: np.ndarray) -> dict[str, float]:
+def interval_metrics(
+    lower: np.ndarray, upper: np.ndarray, target: np.ndarray
+) -> dict[str, float]:
     valid = np.isfinite(lower) & np.isfinite(upper) & np.isfinite(target)
     if not valid.any():
         return {"coverage": float("nan"), "width": float("nan"), "n": 0}
-    return {"coverage": float(np.mean((target[valid] >= lower[valid]) & (target[valid] <= upper[valid]))),
-            "width": float(np.mean(upper[valid] - lower[valid])), "n": int(valid.sum())}
+    return {
+        "coverage": float(
+            np.mean((target[valid] >= lower[valid]) & (target[valid] <= upper[valid]))
+        ),
+        "width": float(np.mean(upper[valid] - lower[valid])),
+        "n": int(valid.sum()),
+    }
 
 
-def pinball_score(prediction: np.ndarray, target: np.ndarray, quantiles: list[float],
-                  mask: np.ndarray | None = None) -> float:
+def pinball_score(
+    prediction: np.ndarray,
+    target: np.ndarray,
+    quantiles: list[float],
+    mask: np.ndarray | None = None,
+) -> float:
     error = target[..., None] - prediction
     q = np.asarray(quantiles).reshape((1,) * target.ndim + (-1,))
     loss = np.maximum(q * error, (q - 1) * error)
@@ -60,8 +86,12 @@ def pinball_score(prediction: np.ndarray, target: np.ndarray, quantiles: list[fl
     return float(np.mean(loss[valid])) if valid.any() else float("nan")
 
 
-def crps_from_quantiles(prediction: np.ndarray, target: np.ndarray, quantiles: list[float],
-                        mask: np.ndarray | None = None) -> float:
+def crps_from_quantiles(
+    prediction: np.ndarray,
+    target: np.ndarray,
+    quantiles: list[float],
+    mask: np.ndarray | None = None,
+) -> float:
     """Quantile approximation to CRPS: twice integrated pinball loss."""
     if len(quantiles) < 2:
         raise ValueError("at least two quantiles are required")
@@ -71,6 +101,6 @@ def crps_from_quantiles(prediction: np.ndarray, target: np.ndarray, quantiles: l
     valid = np.isfinite(target) if mask is None else (mask & np.isfinite(target))
     if not valid.any():
         return float("nan")
-    integrate = getattr(np, "trapezoid", None) or getattr(np, "trapz")
+    integrate = getattr(np, "trapezoid", None) or np.trapz
     per_case = integrate(losses[valid], x=np.asarray(quantiles), axis=-1) * 2
     return float(np.mean(per_case))

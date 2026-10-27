@@ -12,7 +12,9 @@ from paper.figure_style import (
 )
 
 
-@pytest.mark.parametrize("width,width_in", [("single", SINGLE_COLUMN_IN), ("double", DOUBLE_COLUMN_IN)])
+@pytest.mark.parametrize(
+    "width,width_in", [("single", SINGLE_COLUMN_IN), ("double", DOUBLE_COLUMN_IN)]
+)
 def test_fixed_ieee_canvas_exports_pdf_png_and_quality(tmp_path, width, width_in):
     apply_style()
     fig, ax = plt.subplots(figsize=(width_in, 2.2), constrained_layout=True)

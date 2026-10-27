@@ -1,4 +1,5 @@
 """Event-probability calibration and diagnostics."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -6,7 +7,9 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 
-def quantile_risk_below_threshold(quantiles: np.ndarray, threshold: float) -> np.ndarray:
+def quantile_risk_below_threshold(
+    quantiles: np.ndarray, threshold: float
+) -> np.ndarray:
     """Estimate lower-tail event risk by piecewise-linear interpolation of q10/q50/q90."""
     values = np.asarray(quantiles, dtype=float)
     if values.shape[-1] != 3:
@@ -24,13 +27,16 @@ def quantile_risk_below_threshold(quantiles: np.ndarray, threshold: float) -> np
     return np.clip(risk, 0.0, 1.0)
 
 
-def fit_isotonic_calibrator(raw_probability: np.ndarray,
-                            event: np.ndarray) -> IsotonicRegression:
+def fit_isotonic_calibrator(
+    raw_probability: np.ndarray, event: np.ndarray
+) -> IsotonicRegression:
     raw = np.asarray(raw_probability, dtype=float)
     y = np.asarray(event, dtype=int)
     valid = np.isfinite(raw) & np.isfinite(y)
     if valid.sum() < 2 or np.unique(y[valid]).size < 2:
-        raise ValueError("Probability calibration requires finite validation samples from both event classes")
+        raise ValueError(
+            "Probability calibration requires finite validation samples from both event classes"
+        )
     calibrator = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
     calibrator.fit(np.clip(raw[valid], 0.0, 1.0), y[valid])
     return calibrator
@@ -44,33 +50,51 @@ def brier_score(probability: np.ndarray, event: np.ndarray) -> float:
     return float(np.mean((p[valid] - y[valid]) ** 2))
 
 
-def reliability_table(probability: np.ndarray, event: np.ndarray,
-                      bins: int = 10) -> list[dict[str, float | int]]:
+def reliability_table(
+    probability: np.ndarray, event: np.ndarray, bins: int = 10
+) -> list[dict[str, float | int]]:
     p, y = np.asarray(probability, dtype=float), np.asarray(event, dtype=float)
     valid = np.isfinite(p) & np.isfinite(y)
     p, y = np.clip(p[valid], 0.0, 1.0), y[valid]
     rows = []
     edges = np.linspace(0.0, 1.0, bins + 1)
     for i in range(bins):
-        selected = (p >= edges[i]) & ((p < edges[i + 1]) if i < bins - 1 else (p <= edges[i + 1]))
+        selected = (p >= edges[i]) & (
+            (p < edges[i + 1]) if i < bins - 1 else (p <= edges[i + 1])
+        )
         if selected.any():
-            rows.append({
-                "bin": i, "count": int(selected.sum()),
-                "mean_predicted": float(np.mean(p[selected])),
-                "observed_frequency": float(np.mean(y[selected])),
-            })
+            rows.append(
+                {
+                    "bin": i,
+                    "count": int(selected.sum()),
+                    "mean_predicted": float(np.mean(p[selected])),
+                    "observed_frequency": float(np.mean(y[selected])),
+                }
+            )
     return rows
 
 
-def expected_calibration_error(probability: np.ndarray, event: np.ndarray,
-                               bins: int = 10) -> float:
+def expected_calibration_error(
+    probability: np.ndarray, event: np.ndarray, bins: int = 10
+) -> float:
     table = reliability_table(probability, event, bins)
     total = sum(row["count"] for row in table)
-    return float(sum(row["count"] * abs(row["mean_predicted"] - row["observed_frequency"])
-                     for row in table) / total) if total else float("nan")
+    return (
+        float(
+            sum(
+                row["count"] * abs(row["mean_predicted"] - row["observed_frequency"])
+                for row in table
+            )
+            / total
+        )
+        if total
+        else float("nan")
+    )
 
 
-def calibration_slope_intercept(probability: np.ndarray, event: np.ndarray) -> dict[str, float]:
+def calibration_slope_intercept(
+    probability: np.ndarray, event: np.ndarray
+) -> dict[str, float]:
     p, y = np.asarray(probability, dtype=float), np.asarray(event, dtype=int)
     valid = np.isfinite(p) & np.isfinite(y)
     p = np.clip(p[valid], 1e-6, 1 - 1e-6)

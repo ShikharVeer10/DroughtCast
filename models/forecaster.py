@@ -1,11 +1,11 @@
 """Canonical DroughtCast multi-scale SPEI forecaster (diagram architecture)."""
+
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Union
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from models.attention import TemporalAttention
 from models.config_schema import validate_config
@@ -39,7 +39,9 @@ class MultiScaleForecaster(nn.Module):
             input_dim = len(data["features"])
             data["input_dim"] = input_dim
         if not input_dim:
-            raise ValueError("data.input_dim must be set or inferable from data.features")
+            raise ValueError(
+                "data.input_dim must be set or inferable from data.features"
+            )
 
         self.hidden1 = int(model.get("hidden_dim_1", 64))
         self.hidden2 = int(model.get("hidden_dim_2", 32))
@@ -59,9 +61,13 @@ class MultiScaleForecaster(nn.Module):
             if encoder_type == "lstm":
                 return SharedLSTMEncoder(input_dim, self.hidden1, self.hidden2, dropout)
             if encoder_type == "gru":
-                return CapacityMatchedGRUEncoder(input_dim, self.hidden1, self.hidden2, dropout)
+                return CapacityMatchedGRUEncoder(
+                    input_dim, self.hidden1, self.hidden2, dropout
+                )
             if encoder_type == "transformer":
-                return CapacityMatchedTransformerEncoder(input_dim, self.hidden2, dropout)
+                return CapacityMatchedTransformerEncoder(
+                    input_dim, self.hidden2, dropout
+                )
             raise ValueError(f"Unknown encoder: {encoder_type}")
 
         self.separate_encoders = bool(model.get("separate_encoders", False))
@@ -77,13 +83,16 @@ class MultiScaleForecaster(nn.Module):
         elif attention_mode == "shared":
             self.attentions = nn.ModuleList([TemporalAttention(self.hidden2)])
         elif attention_mode == "head_specific":
-            self.attentions = nn.ModuleList([TemporalAttention(self.hidden2) for _ in range(3)])
+            self.attentions = nn.ModuleList(
+                [TemporalAttention(self.hidden2) for _ in range(3)]
+            )
         else:
             raise ValueError(f"Unknown attention mode: {attention_mode}")
 
         self.variable_gate = (
             nn.Sequential(nn.Linear(input_dim, input_dim), nn.Softmax(dim=-1))
-            if model.get("variable_gate", False) else None
+            if model.get("variable_gate", False)
+            else None
         )
 
         # Context may grow if static descriptors are concatenated (Phase 2 flag).
@@ -109,26 +118,43 @@ class MultiScaleForecaster(nn.Module):
             if self.quantiles:
                 q_count = len(self.quantiles)
                 if q_count < 3:
-                    raise ValueError("quantiles requires at least three levels (e.g. [0.1, 0.5, 0.9])")
-                if sorted(self.quantiles) != list(self.quantiles) or len(set(self.quantiles)) != q_count:
+                    raise ValueError(
+                        "quantiles requires at least three levels (e.g. [0.1, 0.5, 0.9])"
+                    )
+                if (
+                    sorted(self.quantiles) != list(self.quantiles)
+                    or len(set(self.quantiles)) != q_count
+                ):
                     raise ValueError("quantiles must be strictly increasing")
-                self.decoders = nn.ModuleList([
-                    nn.Sequential(
-                        nn.Linear(context_dim, self.hidden1), nn.ReLU(),
-                        nn.Linear(self.hidden1, self.forecast_steps * q_count),
-                    ) for _ in range(3)
-                ])
+                self.decoders = nn.ModuleList(
+                    [
+                        nn.Sequential(
+                            nn.Linear(context_dim, self.hidden1),
+                            nn.ReLU(),
+                            nn.Linear(self.hidden1, self.forecast_steps * q_count),
+                        )
+                        for _ in range(3)
+                    ]
+                )
                 self.q_count = q_count
             else:
-                self.decoders = nn.ModuleList([
-                    ForecastDecoder(context_dim, self.forecast_steps, hidden_dim=self.hidden1, dropout=dropout)
-                    for _ in range(3)
-                ])
+                self.decoders = nn.ModuleList(
+                    [
+                        ForecastDecoder(
+                            context_dim,
+                            self.forecast_steps,
+                            hidden_dim=self.hidden1,
+                            dropout=dropout,
+                        )
+                        for _ in range(3)
+                    ]
+                )
 
     @classmethod
-    def from_config(cls, config: Union[dict, str, Path]) -> "MultiScaleForecaster":
+    def from_config(cls, config: dict | str | Path) -> MultiScaleForecaster:
         if isinstance(config, (str, Path)):
             import yaml
+
             cfg = yaml.safe_load(Path(config).read_text(encoding="utf-8"))
         else:
             cfg = config
@@ -140,9 +166,15 @@ class MultiScaleForecaster(nn.Module):
         encoded = self.encoder(x)
         return [encoded, encoded, encoded]
 
-    def attend(self, encoded_list: list[torch.Tensor], batch: int, steps: int, device) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor | None]:
+    def attend(
+        self, encoded_list: list[torch.Tensor], batch: int, steps: int, device
+    ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor | None]:
         shared_context = shared_alpha = None
-        if self.attentions is not None and self.attention_mode == "shared" and not self.separate_encoders:
+        if (
+            self.attentions is not None
+            and self.attention_mode == "shared"
+            and not self.separate_encoders
+        ):
             shared_context, shared_alpha = self.attentions[0](encoded_list[0])
 
         contexts, attentions = [], []
@@ -161,8 +193,12 @@ class MultiScaleForecaster(nn.Module):
             attentions.append(alpha)
         return contexts, attentions, shared_alpha
 
-    def forward(self, x: torch.Tensor, last_spei: torch.Tensor | None = None,
-                static: torch.Tensor | None = None):
+    def forward(
+        self,
+        x: torch.Tensor,
+        last_spei: torch.Tensor | None = None,
+        static: torch.Tensor | None = None,
+    ):
         """Forward pass.
 
         Args:
@@ -176,7 +212,9 @@ class MultiScaleForecaster(nn.Module):
             x = x * gate.unsqueeze(1)
 
         encoded_list = self.encode(x)
-        contexts, attentions, shared_alpha = self.attend(encoded_list, x.shape[0], x.shape[1], x.device)
+        contexts, attentions, shared_alpha = self.attend(
+            encoded_list, x.shape[0], x.shape[1], x.device
+        )
 
         if self.static_context:
             if static is not None and static.ndim != 2:
@@ -184,7 +222,9 @@ class MultiScaleForecaster(nn.Module):
             if static is not None and static.shape[0] != x.shape[0]:
                 raise ValueError("static batch dimension must match x")
             if static is None:
-                static = torch.zeros(x.shape[0], self._static_dim, device=x.device, dtype=x.dtype)
+                static = torch.zeros(
+                    x.shape[0], self._static_dim, device=x.device, dtype=x.dtype
+                )
             if static.shape[1] != self._static_dim:
                 raise ValueError(f"static must have shape [B, {self._static_dim}]")
             contexts = [torch.cat([c, static], dim=-1) for c in contexts]
@@ -221,7 +261,8 @@ class MultiScaleForecaster(nn.Module):
                     preds[name] = preds[name] + base
 
         attention_output = (
-            shared_alpha if self.attention_mode == "shared" and not self.separate_encoders
+            shared_alpha
+            if self.attention_mode == "shared" and not self.separate_encoders
             else torch.stack(attentions, dim=1)
         )
         if self.attentions is None:
@@ -239,7 +280,11 @@ class MultiScaleForecaster(nn.Module):
         """Stacked point predictions [B, 3, L] (median if quantiles)."""
         preds, _ = self.forward(x, **kwargs)
         if self.quantiles:
-            mid = self.quantiles.index(0.5) if 0.5 in self.quantiles else len(self.quantiles) // 2
+            mid = (
+                self.quantiles.index(0.5)
+                if 0.5 in self.quantiles
+                else len(self.quantiles) // 2
+            )
             return torch.stack([preds[k][..., mid] for k in self.SCALE_NAMES], dim=1)
         return torch.stack([preds[k] for k in self.SCALE_NAMES], dim=1)
 

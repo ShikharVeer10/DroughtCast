@@ -12,11 +12,17 @@ def _grid(path):
         "lon": [75.0, 76.0],
     }
     values = np.ones((2, 2, 2), dtype=float)
-    ds = xr.Dataset({
-        f"{prefix}{scale}": (("time", "lat", "lon"),
-                              values + (0.1 if prefix == "pred_" else 0))
-        for prefix in ("obs_", "pred_") for scale in ("spei_3", "spei_6", "spei_12")
-    }, coords=coords)
+    ds = xr.Dataset(
+        {
+            f"{prefix}{scale}": (
+                ("time", "lat", "lon"),
+                values + (0.1 if prefix == "pred_" else 0),
+            )
+            for prefix in ("obs_", "pred_")
+            for scale in ("spei_3", "spei_6", "spei_12")
+        },
+        coords=coords,
+    )
     ds.to_netcdf(path)
 
 

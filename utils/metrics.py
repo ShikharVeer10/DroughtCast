@@ -1,5 +1,4 @@
 import numpy as np
-from typing import Dict, Union
 
 
 def calculate_rmse(preds: np.ndarray, targets: np.ndarray) -> float:
@@ -25,13 +24,19 @@ def calculate_r_squared(preds: np.ndarray, targets: np.ndarray) -> float:
     return float(1.0 - (ss_res / (ss_tot + 1e-12)))
 
 
-def skill_score_persistence(preds: np.ndarray, targets: np.ndarray, persistence_preds: np.ndarray) -> float:
+def skill_score_persistence(
+    preds: np.ndarray, targets: np.ndarray, persistence_preds: np.ndarray
+) -> float:
     """
     Standard hydrometeorological Skill Score over Persistence (SS_pers):
     SS_pers = 1.0 - (MSE_model / MSE_persistence).
     Positive indicates improvement over persistence benchmark.
     """
-    p, y, b = np.asarray(preds).ravel(), np.asarray(targets).ravel(), np.asarray(persistence_preds).ravel()
+    p, y, b = (
+        np.asarray(preds).ravel(),
+        np.asarray(targets).ravel(),
+        np.asarray(persistence_preds).ravel(),
+    )
     valid = np.isfinite(p) & np.isfinite(y) & np.isfinite(b)
     p, y, b = p[valid], y[valid], b[valid]
     if len(y) == 0:
@@ -75,16 +80,23 @@ def calculate_kge(preds: np.ndarray, targets: np.ndarray) -> float:
         correlation = 0.0
     variability = np.std(p) / np.std(y)
     normalized_bias = (np.mean(p) - np.mean(y)) / np.std(y)
-    return float(1.0 - np.sqrt((correlation - 1.0) ** 2 + (variability - 1.0) ** 2 + normalized_bias ** 2))
+    return float(
+        1.0
+        - np.sqrt(
+            (correlation - 1.0) ** 2 + (variability - 1.0) ** 2 + normalized_bias**2
+        )
+    )
 
 
-def drought_event_metrics(preds: np.ndarray, targets: np.ndarray, threshold: float = -1.0) -> Dict[str, Union[int, float]]:
+def drought_event_metrics(
+    preds: np.ndarray, targets: np.ndarray, threshold: float = -1.0
+) -> dict[str, int | float]:
     """
     Drought onset & extreme regime contingency metrics for threshold:
     - Default threshold = -1.0 (Moderate drought)
     - Severe drought threshold = -1.5
     - Extreme drought threshold = -2.0
-    
+
     CSI: Critical Success Index (Threat Score) = TP / (TP + FP + FN)
     POD: Probability of Detection (Hit Rate) = TP / (TP + FN)
     FAR: False Alarm Ratio = FP / (TP + FP)
@@ -103,6 +115,12 @@ def drought_event_metrics(preds: np.ndarray, targets: np.ndarray, threshold: flo
     f1 = float(2 * tp / (2 * tp + fp + fn)) if (2 * tp + fp + fn) > 0 else float("nan")
     return {
         "threshold": threshold,
-        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
-        "pod": pod, "far": far, "csi": csi, "f1": f1
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "tn": tn,
+        "pod": pod,
+        "far": far,
+        "csi": csi,
+        "f1": f1,
     }

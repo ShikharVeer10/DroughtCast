@@ -1,4 +1,3 @@
-import ast
 import importlib.util
 import json
 import re
@@ -12,12 +11,16 @@ import pytest
 from paper.figure_style import DOUBLE_COLUMN_IN, SINGLE_COLUMN_IN
 
 ROOT = Path(__file__).parents[1]
-SPEC = importlib.util.spec_from_file_location("make_paper_figures", ROOT / "make_paper_figures.py")
+SPEC = importlib.util.spec_from_file_location(
+    "make_paper_figures", ROOT / "make_paper_figures.py"
+)
 figures = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(figures)
 
 
-def test_missing_input_audit_reports_commands_and_creates_no_images(monkeypatch, capsys):
+def test_missing_input_audit_reports_commands_and_creates_no_images(
+    monkeypatch, capsys
+):
     with tempfile.TemporaryDirectory(dir=ROOT) as temp_dir:
         tmp_path = Path(temp_dir)
         monkeypatch.setattr(figures, "ROOT", tmp_path)
@@ -56,6 +59,8 @@ def test_ieee_width_constants_and_saved_figures_have_data_and_provenance(monkeyp
         assert (tmp_path / "test_figure.pdf").is_file()
         assert (tmp_path / "test_figure.png").is_file()
         assert (tmp_path / "data" / "test_figure.csv").is_file()
-        provenance = json.loads((tmp_path / "provenance" / "test_figure.json").read_text())
+        provenance = json.loads(
+            (tmp_path / "provenance" / "test_figure.json").read_text()
+        )
         assert "git_commit" in provenance
         assert "config_sha256" in provenance

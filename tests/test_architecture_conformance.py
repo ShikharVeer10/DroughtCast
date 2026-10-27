@@ -1,4 +1,5 @@
 """Architecture conformance: default model must match the canonical diagram."""
+
 from __future__ import annotations
 
 import json
@@ -9,9 +10,8 @@ import torch
 import yaml
 
 from models.config_schema import validate_config
-from models.forecaster import DroughtCast, MultiScaleForecaster
 from models.decoder import ForecastDecoder
-
+from models.forecaster import DroughtCast, MultiScaleForecaster
 
 DIAGRAM = Path("configs/base_diagram.yaml")
 

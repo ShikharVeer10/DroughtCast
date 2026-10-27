@@ -14,12 +14,21 @@ def test_netcdf_speibase_nearest_cell_ingestion_and_validation(tmp_path):
     for scale in (3, 6, 12):
         values = np.zeros((len(dates), len(lat), len(lon)), dtype=np.float32)
         values[:, 1, 1] = np.arange(len(dates)) + scale
-        ds = xr.Dataset({"spei": (("time", "latitude", "longitude"), values)},
-                        coords={"time": dates, "latitude": lat, "longitude": lon})
+        ds = xr.Dataset(
+            {"spei": (("time", "latitude", "longitude"), values)},
+            coords={"time": dates, "latitude": lat, "longitude": lon},
+        )
         ds.to_netcdf(tmp_path / f"spei{scale:02d}.nc")
-    computed = pd.DataFrame({"site": "test", "date": dates,
-        "spei_3": np.arange(4) + 3, "spei_6": np.arange(4) + 6,
-        "spei_12": np.arange(4) + 12, "feature": 1.0})
+    computed = pd.DataFrame(
+        {
+            "site": "test",
+            "date": dates,
+            "spei_3": np.arange(4) + 3,
+            "spei_6": np.arange(4) + 6,
+            "spei_12": np.arange(4) + 12,
+            "feature": 1.0,
+        }
+    )
     merged = ingest_speibase(computed, tmp_path, sites, "spei")
     assert merged["feature"].eq(1.0).all()
     assert np.allclose(merged["spei_3"], np.arange(4) + 3)
