@@ -19,6 +19,8 @@ from utils.probability import (
     brier_score,
     calibration_slope_intercept,
     expected_calibration_error,
+    event_z,
+    fit_platt_calibrator,
     quantile_risk_below_threshold,
 )
 
@@ -90,14 +92,27 @@ def main() -> None:
         for lead in range(test_q.shape[1]):
             valid_val = val_mask[:, lead] & np.isfinite(val_q[:, lead]).all(axis=1)
             valid_test = test_mask[:, lead] & np.isfinite(test_q[:, lead]).all(axis=1)
-            raw_val = quantile_risk_below_threshold(
-                val_q[valid_val, lead], args.threshold
-            )
+            raw_val_z = event_z(val_q[valid_val, lead], args.threshold)
+            raw_val = quantile_risk_below_threshold(val_q[valid_val, lead], args.threshold)
             raw_test = quantile_risk_below_threshold(
                 test_q[valid_test, lead], args.threshold
             )
             val_event = (val_y[valid_val, lead] <= args.threshold).astype(int)
             test_event = (test_y[valid_test, lead] <= args.threshold).astype(int)
+            platt = fit_platt_calibrator(raw_val_z, val_event)
+            test_z = event_z(test_q[valid_test, lead], args.threshold)
+            base_rate = float(val_event.mean())
+            platt_probability = platt.predict(test_z)
+            platt_calibration = calibration_slope_intercept(platt_probability, test_event)
+            rows.append({
+                "scale": scale, "lead": f"T+{lead + 1}", "method": "platt_z",
+                "n_validation": len(val_event), "n_test": len(test_event),
+                "brier": brier_score(platt_probability, test_event),
+                "ece": expected_calibration_error(platt_probability, test_event),
+                "calibration_intercept": platt_calibration["intercept"],
+                "calibration_slope": platt_calibration["slope"],
+                "skill_vs_base_rate": 1 - brier_score(platt_probability, test_event) / brier_score(np.full(len(test_event), base_rate), test_event),
+            })
             for method, predictor in fit_models(raw_val, val_event).items():
                 probability = np.asarray(predictor(raw_test), dtype=float)
                 rows.append(

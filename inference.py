@@ -14,7 +14,7 @@ import yaml
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
-from utils.probability import fit_isotonic_calibrator, quantile_risk_below_threshold
+from utils.probability import event_z, fit_platt_calibrator, raw_event_probability
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 
@@ -183,6 +183,11 @@ def main():
     parser.add_argument(
         "--device", default="cpu", help="Device to run inference on (cpu, cuda)"
     )
+    parser.add_argument(
+        "--unclipped-probabilities",
+        action="store_true",
+        help="Write the validation-fitted Platt sigmoid before the default [0.005, 0.995] clipping",
+    )
     args = parser.parse_args()
 
     chk_path = Path(args.checkpoint)
@@ -266,11 +271,9 @@ def main():
                 validation.Y[:, scale_index, lead].numpy()[valid]
                 <= args.drought_threshold
             ).astype(int)
-            raw_val_probability = quantile_risk_below_threshold(
-                val_quantiles, args.drought_threshold
-            )
+            val_z = event_z(val_quantiles, args.drought_threshold)
             calibrators[(scale_index, lead)] = (
-                fit_isotonic_calibrator(raw_val_probability, val_events),
+                fit_platt_calibrator(val_z, val_events),
                 int(valid.sum()),
             )
 
@@ -279,7 +282,8 @@ def main():
     print(f"Checkpoint: {chk_path}")
     print(f"Input data: {input_csv}")
     print(f"Event: SPEI <= {args.drought_threshold:.1f}")
-    print("Calibration: validation-only isotonic regression, fitted separately by scale and lead")
+    calibration_description = "validation-only Platt scaling, unclipped sigmoid" if args.unclipped_probabilities else "validation-only Platt scaling, clipped to [0.005, 0.995]"
+    print(f"Calibration: {calibration_description}, fitted separately by scale and lead")
     rows = []
     for site_index, site in enumerate(selected_sites):
         _, input_dates, _ = site_inputs[site]
@@ -287,24 +291,20 @@ def main():
         print(
             f"\nSite: {site} | input: {input_dates[0]:%Y-%m} through {last_input:%Y-%m}"
         )
-        print("Scale   Lead  Target month  q10     q50     q90     P(drought)  n_val")
-        print("------  ----  ------------  ------  ------  ------  -----------  -----")
+        print("Scale   Lead  Target month  q10     q50     q90     z       P(drought)  n_val")
+        print("------  ----  ------------  ------  ------  ------  ------  -----------  -----")
         for scale_index, scale in enumerate(SCALES):
             for lead in range(int(cfg["data"]["forecast_steps"])):
                 calibrator, n_val = calibrators[(scale_index, lead)]
                 forecast_quantiles = predictions[scale][site_index, lead, :]
-                raw_probability = float(
-                    quantile_risk_below_threshold(
-                        forecast_quantiles, args.drought_threshold
-                    )
-                )
-                calibrated_probability = float(
-                    calibrator.predict(np.asarray([raw_probability]))[0]
-                )
+                raw_z = float(event_z(forecast_quantiles, args.drought_threshold))
+                raw_probability = float(raw_event_probability(raw_z))
+                predict_probability = calibrator.predict_unclipped if args.unclipped_probabilities else calibrator.predict
+                calibrated_probability = float(predict_probability(np.asarray([raw_z]))[0])
                 target_month = last_input + pd.DateOffset(months=lead + 1)
                 q10, q50, q90 = (float(v) for v in forecast_quantiles)
                 print(
-                    f"{scale.upper():<7} T+{lead + 1:<2}  {target_month:%Y-%m}       {q10:>5.2f}   {q50:>5.2f}   {q90:>5.2f}       {calibrated_probability:>6.4f}     {n_val:>3}"
+                    f"{scale.upper():<7} T+{lead + 1:<2}  {target_month:%Y-%m}       {q10:>5.2f}   {q50:>5.2f}   {q90:>5.2f}  {raw_z:>6.2f}    {calibrated_probability:>6.4f}     {n_val:>3}"
                 )
                 rows.append(
                     {
@@ -319,8 +319,9 @@ def main():
                         "q50": q50,
                         "q90": q90,
                         "raw_probability": raw_probability,
+                        "raw_z": raw_z,
                         "calibrated_probability": calibrated_probability,
-                        "calibration": "validation-only isotonic",
+                        "calibration": calibration_description,
                         "n_validation": n_val,
                         "checkpoint": str(chk_path),
                         "dataset_sha256": checkpoint_meta.get("dataset_sha256", ""),

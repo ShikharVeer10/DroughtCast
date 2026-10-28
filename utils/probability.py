@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import numpy as np
+from scipy.special import expit
+from scipy.stats import norm
 from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
@@ -10,7 +12,7 @@ from sklearn.linear_model import LogisticRegression
 def quantile_risk_below_threshold(
     quantiles: np.ndarray, threshold: float
 ) -> np.ndarray:
-    """Estimate lower-tail event risk by piecewise-linear interpolation of q10/q50/q90."""
+    """LEGACY: interpolate lower-tail risk from q10/q50/q90."""
     values = np.asarray(quantiles, dtype=float)
     if values.shape[-1] != 3:
         raise ValueError("Expected exactly three quantiles ordered as q10, q50, q90")
@@ -25,6 +27,60 @@ def quantile_risk_below_threshold(
     risk[low] = 0.1 + 0.4 * (threshold - q10[low]) / (q50[low] - q10[low] + 1e-8)
     risk[high] = 0.5 + 0.4 * (threshold - q50[high]) / (q90[high] - q50[high] + 1e-8)
     return np.clip(risk, 0.0, 1.0)
+
+
+def event_z(quantiles: np.ndarray, threshold: float, min_scale: float = 0.05) -> np.ndarray:
+    """Convert a threshold and q10/q50/q90 forecast to a signed standardized score."""
+    values = np.asarray(quantiles, dtype=float)
+    if values.ndim == 0 or values.shape[-1] != 3:
+        raise ValueError("Expected exactly three quantiles ordered as q10, q50, q90")
+    q10, q50, q90 = (values[..., i] for i in range(3))
+    if not np.isfinite(values).all() or np.any(q10 > q50) or np.any(q50 > q90):
+        raise ValueError("Quantile values must be finite and monotonically ordered")
+    scale_low = np.maximum((q50 - q10) / 1.2815515655, min_scale)
+    scale_up = np.maximum((q90 - q50) / 1.2815515655, min_scale)
+    return (threshold - q50) / np.where(threshold <= q50, scale_low, scale_up)
+
+
+def raw_event_probability(z: np.ndarray) -> np.ndarray:
+    return norm.cdf(z)
+
+
+from dataclasses import dataclass
+import warnings
+
+
+@dataclass(frozen=True)
+class PlattCalibrator:
+    intercept: float
+    slope: float
+    n_samples: int
+    n_events: int
+    floor: float = 0.005
+    ceiling: float = 0.995
+
+    def predict(self, z: np.ndarray) -> np.ndarray:
+        return np.clip(expit(self.intercept + self.slope * np.asarray(z, dtype=float)), self.floor, self.ceiling)
+
+    def predict_unclipped(self, z: np.ndarray) -> np.ndarray:
+        """Return the fitted Platt sigmoid before presentation-bound clipping."""
+        return expit(self.intercept + self.slope * np.asarray(z, dtype=float))
+
+
+def fit_platt_calibrator(z: np.ndarray, event: np.ndarray, min_events: int = 20) -> PlattCalibrator:
+    scores, labels = np.asarray(z, dtype=float).reshape(-1), np.asarray(event, dtype=int).reshape(-1)
+    valid = np.isfinite(scores) & np.isfinite(labels)
+    scores, labels = scores[valid], labels[valid]
+    if len(scores) < 2 or np.unique(labels).size < 2:
+        raise ValueError("Platt calibration requires at least two samples from both event classes")
+    model = LogisticRegression(C=1.0, solver="lbfgs").fit(scores.reshape(-1, 1), labels)
+    events = int(labels.sum())
+    slope = float(model.coef_[0, 0])
+    if events < min_events:
+        warnings.warn(f"Only {events} events; fewer than min_events={min_events}", UserWarning)
+    if slope <= 0:
+        warnings.warn("Fitted Platt calibration slope is nonpositive", UserWarning)
+    return PlattCalibrator(float(model.intercept_[0]), slope, len(scores), events)
 
 
 def fit_isotonic_calibrator(

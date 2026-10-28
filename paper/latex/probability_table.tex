@@ -1,40 +1,40 @@
 \begin{table*}[t]
 \centering
-\caption{Validation-calibrated probability of drought, defined as SPEI at or below -1. Entries are decimal probabilities on [0, 1], shown by configured site, SPEI accumulation scale, and forecast lead. The model uses the six latest available monthly inputs; calibration uses the validation split.}
+\caption{Validation-calibrated probability of drought, defined as SPEI at or below -1. validation-only Platt scaling, 1 seed(s); probabilities are estimates, not guarantees.
 \label{tab:calibrated-drought-probabilities}
 \small
 \begin{tabular}{llrrrr}
 \toprule
 Site & Accumulation scale & T+1 (2025-01) & T+2 (2025-02) & T+3 (2025-03) & T+4 (2025-04) \\
 \midrule
-addis\_ababa & SPEI-3 & 0.0151 & 0.0397 & 0.0678 & 0.0444 \\
-addis\_ababa & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
-addis\_ababa & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
-guntur & SPEI-3 & 0.0714 & 0.1000 & 0.1429 & 0.1467 \\
-guntur & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
-guntur & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
-jaipur & SPEI-3 & 0.0151 & 0.0397 & 0.0678 & 0.0444 \\
-jaipur & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
-jaipur & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
-murray\_darling & SPEI-3 & 0.0151 & 0.0435 & 0.1918 & 0.1467 \\
-murray\_darling & SPEI-6 & 0.2500 & 0.1515 & 0.0287 & 0.0588 \\
-murray\_darling & SPEI-12 & 0.9167 & 0.8824 & 0.9333 & 0.4667 \\
-nagpur & SPEI-3 & 0.0151 & 0.0435 & 0.1212 & 0.1250 \\
-nagpur & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
-nagpur & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
-phoenix & SPEI-3 & 0.6667 & 0.3158 & 0.2222 & 0.3636 \\
-phoenix & SPEI-6 & 0.8750 & 1.0000 & 0.5000 & 0.3333 \\
-phoenix & SPEI-12 & 0.9167 & 0.8824 & 0.9333 & 0.9459 \\
-pretoria & SPEI-3 & 0.6667 & 0.3158 & 0.2222 & 0.3636 \\
-pretoria & SPEI-6 & 0.8750 & 1.0000 & 0.5000 & 0.3333 \\
-pretoria & SPEI-12 & 0.9167 & 0.8824 & 0.9333 & 1.0000 \\
-seville & SPEI-3 & 0.0151 & 0.1000 & 0.1212 & 0.1467 \\
-seville & SPEI-6 & 0.0046 & 0.0283 & 0.0287 & 0.0529 \\
-seville & SPEI-12 & 0.0044 & 0.0044 & 0.0185 & 0.0240 \\
+addis\_ababa & SPEI-3 & 0.005 & 0.03276867233718466 & 0.10278204115976335 & 0.11710509537364243 \\
+addis\_ababa & SPEI-6 & 0.005 & 0.005 & 0.005 & 0.028911477004410744 \\
+addis\_ababa & SPEI-12 & 0.005 & 0.005 & 0.005 & 0.005 \\
+guntur & SPEI-3 & 0.12224292463988137 & 0.14757863253009174 & 0.13276057596484356 & 0.13927843829856562 \\
+guntur & SPEI-6 & 0.005 & 0.03192287570693461 & 0.062440099258222095 & 0.11558570815122976 \\
+guntur & SPEI-12 & 0.005 & 0.005 & 0.005 & 0.005 \\
+jaipur & SPEI-3 & 0.005 & 0.005 & 0.07927246197580486 & 0.10902997278667557 \\
+jaipur & SPEI-6 & 0.005 & 0.005 & 0.005 & 0.0074745844340189434 \\
+jaipur & SPEI-12 & 0.005 & 0.005 & 0.005 & 0.005 \\
+murray\_darling & SPEI-3 & 0.0498920199980296 & 0.11472013671265215 & 0.1348094002719836 & 0.1410002881751726 \\
+murray\_darling & SPEI-6 & 0.1939892917072241 & 0.13386782256811894 & 0.1224908578479705 & 0.12407630310276474 \\
+murray\_darling & SPEI-12 & 0.9358225307648615 & 0.8621918837314999 & 0.7390951148525153 & 0.5949704136730849 \\
+nagpur & SPEI-3 & 0.08299587236825613 & 0.11564849956042524 & 0.1277516129109878 & 0.12607298466334813 \\
+nagpur & SPEI-6 & 0.005 & 0.018131271932975528 & 0.055749138212071184 & 0.10457288448414119 \\
+nagpur & SPEI-12 & 0.005 & 0.005 & 0.005 & 0.005 \\
+phoenix & SPEI-3 & 0.7625035524230889 & 0.4310175507751066 & 0.19538222312209008 & 0.1604439339595106 \\
+phoenix & SPEI-6 & 0.9497903597796558 & 0.7580173962503151 & 0.5941060130110885 & 0.3961502937249506 \\
+phoenix & SPEI-12 & 0.9548954497535489 & 0.8902537476565862 & 0.8514688844780492 & 0.7968764550590465 \\
+pretoria & SPEI-3 & 0.7682043326503067 & 0.43626538010488786 & 0.1971072154869878 & 0.1651883457886717 \\
+pretoria & SPEI-6 & 0.971740900381034 & 0.8022023155724364 & 0.623721564143755 & 0.4156360357974077 \\
+pretoria & SPEI-12 & 0.9908239308840248 & 0.9686422240288176 & 0.9190645728961337 & 0.8542302922675111 \\
+seville & SPEI-3 & 0.09418552646281171 & 0.13927169180288718 & 0.13179498431227185 & 0.13917936451033872 \\
+seville & SPEI-6 & 0.02301230231706373 & 0.06637184213035782 & 0.07965010477909343 & 0.11260171533783375 \\
+seville & SPEI-12 & 0.06186620239740769 & 0.06291842528635144 & 0.07691631146161942 & 0.08997705791389361 \\
 \bottomrule
 \end{tabular}
 \vspace{2pt}
 \begin{minipage}{0.96\textwidth}\footnotesize
-Entries are calibrated event probabilities from the saved quantile checkpoint; they are not binary classifications. The validation-fitted isotonic map is piecewise constant, so tied probabilities across sites can occur. Forecast target months are 2025-01, 2025-02, 2025-03, 2025-04. Sites are the locations configured in this dataset, not a complete state-level coverage.\\
+Entries are calibrated event probabilities from the saved quantile checkpoint; they are not binary classifications. Forecast target months are 2025-01, 2025-02, 2025-03, 2025-04. Sites are the locations configured in this dataset, not a complete state-level coverage.\\
 \end{minipage}
 \end{table*}

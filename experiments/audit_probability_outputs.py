@@ -1,10 +1,8 @@
-"""Audit site-level probabilistic forecasts for identity, provenance, and calibration resolution."""
 
 from __future__ import annotations
 
 import argparse
 import hashlib
-import json
 from pathlib import Path
 
 import pandas as pd
@@ -16,11 +14,6 @@ def main() -> int:
         "--predictions",
         type=Path,
         default=Path("results/inference_probabilities_seed_42.csv"),
-    )
-    parser.add_argument(
-        "--calibration",
-        type=Path,
-        default=Path("results/probability_calibration/calibration_seed_42.json"),
     )
     parser.add_argument("--dataset", type=Path, default=Path("data/monthly_sites.csv"))
     args = parser.parse_args()
@@ -47,35 +40,32 @@ def main() -> int:
         )
     if frame.duplicated(["site", "scale", "lead"]).any():
         raise ValueError("Duplicate site/scale/lead forecast rows found")
-    if not ((frame.q10 <= frame.q50) & (frame.q50 <= frame.q90)).all():
-        raise ValueError("Quantile ordering violation found")
+    ordered = (frame.q10 <= frame.q50) & (frame.q50 <= frame.q90)
+    invalid_probability = frame.calibrated_probability.isin([0.0, 1.0])
+    failed = not ordered.all() or invalid_probability.any()
     grouped = frame.groupby(["scale", "lead"], sort=True)
     print(f"Audited {len(frame)} forecasts for {frame.site.nunique()} sites")
     print(f"Dataset hash: {actual_hash}")
     print("Scale/lead | unique q10/q50/q90 | unique raw P | unique calibrated P")
+    identical_site_pairs = 0
     for (scale, lead), group in grouped:
+        interior = group.loc[~group.calibrated_probability.isin([0.005, 0.995])]
+        duplicate_share = (
+            1 - interior.calibrated_probability.nunique() / len(interior)
+            if len(interior) else 0.0
+        )
+        failed |= duplicate_share > 0.5
+        counts = group.groupby(["q10", "q50", "q90"]).size()
+        identical_site_pairs += int((counts * (counts - 1) // 2).sum())
         print(
             f"{scale}/{lead}: {group.q10.nunique()}/{group.q50.nunique()}/{group.q90.nunique()} | "
-            f"{group.raw_probability.nunique()} | {group.calibrated_probability.nunique()}"
+            f"{group.raw_probability.nunique()} | {group.calibrated_probability.nunique()} | "
+            f"duplicate share={duplicate_share:.3f}"
         )
-    calibration = json.loads(args.calibration.read_text(encoding="utf-8"))
-    rows = [
-        value
-        for scale in calibration.get("scales", {}).values()
-        for value in scale.values()
-    ]
-    worse = sum(
-        float(row["calibrated_brier"]) > float(row["raw_brier"]) for row in rows
-    )
-    print(
-        f"Calibration evaluation: {len(rows) - worse}/{len(rows)} scale/lead cells improved Brier score; "
-        f"{worse}/{len(rows)} worsened it. ECE must be reported separately."
-    )
-    print(
-        "Interpretation: repeated calibrated values are expected from piecewise-constant isotonic calibration; "
-        "they do not imply duplicated q10/q50/q90 forecasts."
-    )
-    return 0
+    print(f"Any exact calibrated 0/1: {bool(invalid_probability.any())}")
+    print(f"Quantiles unordered: {int((~ordered).sum())}")
+    print(f"Identical-site-pair count: {identical_site_pairs}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":
