@@ -1,7 +1,4 @@
-"""Event-probability calibration and diagnostics."""
-
 from __future__ import annotations
-
 import numpy as np
 from scipy.special import expit
 from scipy.stats import norm
@@ -12,14 +9,17 @@ from sklearn.linear_model import LogisticRegression
 def quantile_risk_below_threshold(
     quantiles: np.ndarray, threshold: float
 ) -> np.ndarray:
-    """LEGACY: interpolate lower-tail risk from q10/q50/q90."""
-    values = np.asarray(quantiles, dtype=float)
-    if values.shape[-1] != 3:
+    """LEGACY: linearly interpolate lower-tail risk from q10/q50/q90."""
+    values = np.asarray(quantiles, dtype=np.float64)
+    if values.ndim == 0 or values.shape[-1] != 3:
         raise ValueError("Expected exactly three quantiles ordered as q10, q50, q90")
+    if not np.isfinite(values).all() or not np.isfinite(threshold):
+        raise ValueError("Quantiles and drought threshold must be finite")
     q10, q50, q90 = (values[..., i] for i in range(3))
-    if not np.isfinite(values).all() or np.any(q10 > q50) or np.any(q50 > q90):
-        raise ValueError("Quantile values must be finite and monotonically ordered")
-    risk = np.empty_like(q50, dtype=float)
+    if np.any(q10 > q50) or np.any(q50 > q90):
+        raise ValueError("Quantiles must satisfy q10 <= q50 <= q90")
+
+    risk = np.empty_like(q50, dtype=np.float64)
     risk[threshold <= q10] = 0.1
     risk[threshold >= q90] = 0.9
     low = (threshold > q10) & (threshold <= q50)
@@ -30,7 +30,6 @@ def quantile_risk_below_threshold(
 
 
 def event_z(quantiles: np.ndarray, threshold: float, min_scale: float = 0.05) -> np.ndarray:
-    """Convert a threshold and q10/q50/q90 forecast to a signed standardized score."""
     values = np.asarray(quantiles, dtype=float)
     if values.ndim == 0 or values.shape[-1] != 3:
         raise ValueError("Expected exactly three quantiles ordered as q10, q50, q90")
@@ -42,8 +41,21 @@ def event_z(quantiles: np.ndarray, threshold: float, min_scale: float = 0.05) ->
     return (threshold - q50) / np.where(threshold <= q50, scale_low, scale_up)
 
 
-def raw_event_probability(z: np.ndarray) -> np.ndarray:
-    return norm.cdf(z)
+def raw_event_probability(z:np.ndarray) -> np.ndarray:
+    z=np.asarray(z,dtype=np.float64)
+
+    if not np.isfinite(z).all():
+        raise ValueError("Invalid event score")
+
+    probabilities=norm.cdf(z)
+
+    if not np.isfinite(probabilities).all():
+        raise ValueError("Invalid probability generated")
+
+    if np.any((probabilities<0) | (probabilities>1)):
+        raise ValueError("Probabilites outside [0,1]")
+    
+    return probabilities
 
 
 from dataclasses import dataclass
@@ -59,13 +71,24 @@ class PlattCalibrator:
     floor: float = 0.005
     ceiling: float = 0.995
 
-    def predict(self, z: np.ndarray) -> np.ndarray:
-        return np.clip(expit(self.intercept + self.slope * np.asarray(z, dtype=float)), self.floor, self.ceiling)
+    def predict(self,z:np.ndarray) -> np.ndarray:
+        z=np.asarray(z,dtype=np.float64)
+        
+        if not np.isfinite(z).all():
+            raise ValueError("Calibration scores contain NaN or infinite values")
+
+        logits=self.intercept + self.slope*z
+        probabilities=expit(logits)
+
+        if not np.isfinite(probabilities).all():
+            raise ValueError("Non-finite calibrated probability")
+
+        # Preserve the fitted sigmoid's resolution. Only protect against exact
+        # machine endpoints, which are not valid probabilities for this output.
+        return np.clip(probabilities, np.nextafter(0.0, 1.0), np.nextafter(1.0, 0.0))
 
     def predict_unclipped(self, z: np.ndarray) -> np.ndarray:
-        """Return the fitted Platt sigmoid before presentation-bound clipping."""
         return expit(self.intercept + self.slope * np.asarray(z, dtype=float))
-
 
 def fit_platt_calibrator(z: np.ndarray, event: np.ndarray, min_events: int = 20) -> PlattCalibrator:
     scores, labels = np.asarray(z, dtype=float).reshape(-1), np.asarray(event, dtype=int).reshape(-1)
@@ -83,16 +106,12 @@ def fit_platt_calibrator(z: np.ndarray, event: np.ndarray, min_events: int = 20)
     return PlattCalibrator(float(model.intercept_[0]), slope, len(scores), events)
 
 
-def fit_isotonic_calibrator(
-    raw_probability: np.ndarray, event: np.ndarray
-) -> IsotonicRegression:
+def fit_isotonic_calibrator(raw_probability: np.ndarray, event: np.ndarray) -> IsotonicRegression:
     raw = np.asarray(raw_probability, dtype=float)
     y = np.asarray(event, dtype=int)
     valid = np.isfinite(raw) & np.isfinite(y)
     if valid.sum() < 2 or np.unique(y[valid]).size < 2:
-        raise ValueError(
-            "Probability calibration requires finite validation samples from both event classes"
-        )
+        raise ValueError("Probability calibration requires finite validation samples from both event classes")
     calibrator = IsotonicRegression(y_min=0.0, y_max=1.0, out_of_bounds="clip")
     calibrator.fit(np.clip(raw[valid], 0.0, 1.0), y[valid])
     return calibrator
@@ -106,9 +125,7 @@ def brier_score(probability: np.ndarray, event: np.ndarray) -> float:
     return float(np.mean((p[valid] - y[valid]) ** 2))
 
 
-def reliability_table(
-    probability: np.ndarray, event: np.ndarray, bins: int = 10
-) -> list[dict[str, float | int]]:
+def reliability_table(probability: np.ndarray, event: np.ndarray, bins: int = 10) -> list[dict[str, float | int]]:
     p, y = np.asarray(probability, dtype=float), np.asarray(event, dtype=float)
     valid = np.isfinite(p) & np.isfinite(y)
     p, y = np.clip(p[valid], 0.0, 1.0), y[valid]
@@ -130,9 +147,7 @@ def reliability_table(
     return rows
 
 
-def expected_calibration_error(
-    probability: np.ndarray, event: np.ndarray, bins: int = 10
-) -> float:
+def expected_calibration_error(probability: np.ndarray, event: np.ndarray, bins: int = 10) -> float:
     table = reliability_table(probability, event, bins)
     total = sum(row["count"] for row in table)
     return (
@@ -148,9 +163,7 @@ def expected_calibration_error(
     )
 
 
-def calibration_slope_intercept(
-    probability: np.ndarray, event: np.ndarray
-) -> dict[str, float]:
+def calibration_slope_intercept(probability: np.ndarray, event: np.ndarray) -> dict[str, float]:
     p, y = np.asarray(probability, dtype=float), np.asarray(event, dtype=int)
     valid = np.isfinite(p) & np.isfinite(y)
     p = np.clip(p[valid], 1e-6, 1 - 1e-6)

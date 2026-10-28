@@ -14,7 +14,11 @@ import yaml
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
-from utils.probability import event_z, fit_platt_calibrator, raw_event_probability
+from utils.probability import (
+    event_z,
+    fit_platt_calibrator,
+    raw_event_probability,
+)
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 
@@ -56,9 +60,7 @@ class DroughtCastPredictor:
         self.model.to(self.device)
         self.model.eval()
 
-    def predict(
-        self, x: np.ndarray | torch.Tensor
-    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    def predict(self, x: np.ndarray | torch.Tensor) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         if isinstance(x, np.ndarray):
             x_t = torch.as_tensor(x, dtype=torch.float32, device=self.device)
         else:
@@ -87,10 +89,7 @@ class DroughtCastPredictor:
         return preds, aux
 
 
-def _load_recent_input(
-    input_csv: Path, site: str, features: list[str], seq_len: int, metadata_path: Path
-) -> tuple[np.ndarray, list[pd.Timestamp], dict]:
-    """Read six real monthly observations and apply the saved train-only scaler."""
+def _load_recent_input(input_csv: Path, site: str, features: list[str], seq_len: int, metadata_path: Path) -> tuple[np.ndarray, list[pd.Timestamp], dict]:
     if not input_csv.is_file():
         raise FileNotFoundError(f"Input data not found: {input_csv}")
     if not metadata_path.is_file():
@@ -183,11 +182,6 @@ def main():
     parser.add_argument(
         "--device", default="cpu", help="Device to run inference on (cpu, cuda)"
     )
-    parser.add_argument(
-        "--unclipped-probabilities",
-        action="store_true",
-        help="Write the validation-fitted Platt sigmoid before the default [0.005, 0.995] clipping",
-    )
     args = parser.parse_args()
 
     chk_path = Path(args.checkpoint)
@@ -271,19 +265,32 @@ def main():
                 validation.Y[:, scale_index, lead].numpy()[valid]
                 <= args.drought_threshold
             ).astype(int)
+            event_count=int(val_events.sum())
+            non_event_count=int(len(val_events)- event_count)
+            print(f"Calibration diagnostic | scale={scale} | "f"lead=T+{lead + 1} | "f"valid={len(val_events)} | "f"drought_events={event_count} | "f"non_events={non_event_count}")
+
+            if len(val_events) == 0 or event_count == 0 or non_event_count == 0:
+                raise ValueError(
+                    f"Cannot fit Platt calibration for scale={scale}, "
+                    f"lead=T+{lead + 1}, threshold={args.drought_threshold}. "
+                    f"Valid samples={len(val_events)}, "
+                    f"drought events={event_count}, non-events={non_event_count}. "
+                    "Check the validation target distribution and drought threshold."
+                )
+
             val_z = event_z(val_quantiles, args.drought_threshold)
             calibrators[(scale_index, lead)] = (
                 fit_platt_calibrator(val_z, val_events),
                 int(valid.sum()),
             )
 
+
     print("DroughtCast calibrated drought-event forecast")
     print(f"Sites: {', '.join(selected_sites)}")
     print(f"Checkpoint: {chk_path}")
     print(f"Input data: {input_csv}")
     print(f"Event: SPEI <= {args.drought_threshold:.1f}")
-    calibration_description = "validation-only Platt scaling, unclipped sigmoid" if args.unclipped_probabilities else "validation-only Platt scaling, clipped to [0.005, 0.995]"
-    print(f"Calibration: {calibration_description}, fitted separately by scale and lead")
+    print("Calibration: validation-only Platt scaling, fitted separately by scale and lead")
     rows = []
     for site_index, site in enumerate(selected_sites):
         _, input_dates, _ = site_inputs[site]
@@ -291,20 +298,39 @@ def main():
         print(
             f"\nSite: {site} | input: {input_dates[0]:%Y-%m} through {last_input:%Y-%m}"
         )
-        print("Scale   Lead  Target month  q10     q50     q90     z       P(drought)  n_val")
-        print("------  ----  ------------  ------  ------  ------  ------  -----------  -----")
+        print("Scale   Lead  Target month  q10     q50     q90     P(drought)              n_val")
+        print("------  ----  ------------  ------  ------  ------  ----------------------  -----")
         for scale_index, scale in enumerate(SCALES):
             for lead in range(int(cfg["data"]["forecast_steps"])):
                 calibrator, n_val = calibrators[(scale_index, lead)]
-                forecast_quantiles = predictions[scale][site_index, lead, :]
+                forecast_quantiles=np.asarray(
+                    predictions[scale][site_index,lead,:],
+                    dtype=np.float64,                    
+                )
+                
+                if forecast_quantiles.shape !=(3,):
+                    raise ValueError(f"Expected three quantiles for {site},{scale},lead{lead+1}")
+
+                if not np.isfinite(forecast_quantiles).all():
+                    raise ValueError(f"Non finite quantiles for {site}, {scale}, lead {lead+1}")
+
+                if not(forecast_quantiles[0]<=forecast_quantiles[1]<=forecast_quantiles[2]):
+                    raise ValueError(f"Quantile ordering error for {site}, {scale}, lead{lead+1}")   
+                
                 raw_z = float(event_z(forecast_quantiles, args.drought_threshold))
                 raw_probability = float(raw_event_probability(raw_z))
-                predict_probability = calibrator.predict_unclipped if args.unclipped_probabilities else calibrator.predict
-                calibrated_probability = float(predict_probability(np.asarray([raw_z]))[0])
+                calibrated_probability = float(calibrator.predict(np.asarray([raw_z]))[0])
+
+                if not np.isfinite(calibrated_probability):
+                    raise ValueError("Calibrated probability is not finite")
+
+                if not 0.0 <= calibrated_probability <= 1.0:
+                    raise ValueError(f"Calibrated probability outside [0, 1]: {calibrated_probability}")
+
                 target_month = last_input + pd.DateOffset(months=lead + 1)
                 q10, q50, q90 = (float(v) for v in forecast_quantiles)
                 print(
-                    f"{scale.upper():<7} T+{lead + 1:<2}  {target_month:%Y-%m}       {q10:>5.2f}   {q50:>5.2f}   {q90:>5.2f}  {raw_z:>6.2f}    {calibrated_probability:>6.4f}     {n_val:>3}"
+                    f"{scale.upper():<7} T+{lead + 1:<2}  {target_month:%Y-%m}       {q10:>5.2f}   {q50:>5.2f}   {q90:>5.2f}  {calibrated_probability:>22.2f}  {n_val:>3}"
                 )
                 rows.append(
                     {
@@ -321,7 +347,7 @@ def main():
                         "raw_probability": raw_probability,
                         "raw_z": raw_z,
                         "calibrated_probability": calibrated_probability,
-                        "calibration": calibration_description,
+                        "calibration": "validation-only Platt scaling",
                         "n_validation": n_val,
                         "checkpoint": str(chk_path),
                         "dataset_sha256": checkpoint_meta.get("dataset_sha256", ""),

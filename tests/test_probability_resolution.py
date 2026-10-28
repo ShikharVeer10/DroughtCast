@@ -36,7 +36,8 @@ def test_platt_synthetic_resolution_and_skill():
     calibrator = fit_platt_calibrator(z[:300], event[:300])
     probability = calibrator.predict(z[300:])
     base = event[300:].mean()
-    assert probability.min() >= 0.005 and probability.max() <= 0.995
+    assert np.isfinite(probability).all()
+    assert np.all((probability>=0.0) & (probability<=1.0))
     assert np.unique(probability[(probability > 0.005) & (probability < 0.995)]).size > 1
     assert np.mean((probability - event[300:]) ** 2) < np.mean((base - event[300:]) ** 2)
 
@@ -72,11 +73,13 @@ def test_ensemble_mean_is_between_seed_min_and_max():
     assert row.calibrated_probability_min <= row.calibrated_probability_mean <= row.calibrated_probability_max
 
 
-def test_unclipped_platt_prediction_preserves_tail_resolution():
+def test_unclipped_platt_prediction_preserve_test_resolution():
     from utils.probability import PlattCalibrator
 
-    calibrator = PlattCalibrator(intercept=-2.0, slope=1.0, n_samples=100, n_events=5)
-    z = np.array([-10.0, -9.0, -8.0])
-    assert np.unique(calibrator.predict_unclipped(z)).size == 3
-    assert np.all(calibrator.predict_unclipped(z) < calibrator.floor)
-    assert np.unique(calibrator.predict(z)).size == 1
+    calibrator=PlattCalibrator(intercept=-2.0,slope=1.0,n_samples=100,n_events=5)
+    z=np.array([-10.0,-9.0,-8.0])
+    probability=calibrator.predict(z)
+    assert np.isfinite(probability).all()
+    assert np.all((probability>=0.0) & (probability<=1.0))
+    assert np.unique(probability).size==3
+    assert np.all(probability<calibrator.floor)
