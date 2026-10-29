@@ -131,7 +131,7 @@ def _csv_has(path: Path, columns: set[str]) -> bool:
         return False
     try:
         return columns.issubset(set(pd.read_csv(path, nrows=0).columns))
-    except Exception:
+    except (OSError, ValueError):
         return False
 
 
@@ -447,7 +447,7 @@ def missing_inputs() -> dict[str, list[str]]:
             import geopandas as gpd
 
             gpd.datasets.get_path("naturalearth_lowres")
-        except Exception:
+        except (ImportError, AttributeError, FileNotFoundError, OSError):
             missing.setdefault("F2", []).append(
                 "Natural Earth coastlines (Cartopy is unavailable and no local Natural Earth dataset is installed)"
             )
@@ -559,7 +559,7 @@ def _save(fig, name: str, data: pd.DataFrame, *, kind="line"):
             text=True,
             check=True,
         ).stdout.strip()
-    except Exception:
+    except (OSError, subprocess.CalledProcessError):
         commit = "unknown"
     try:
         dataset_meta = json.loads(
@@ -3182,7 +3182,7 @@ def _write_readme(missing, generated):
             text=True,
             check=True,
         ).stdout.strip()
-    except Exception:
+    except (OSError, subprocess.CalledProcessError):
         commit = "unknown"
     captions = {
         "P1": (
