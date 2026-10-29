@@ -84,6 +84,7 @@ def main():
     parser.add_argument("--output", default="results/test_metrics.json")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--skip-classical", action="store_true")
+    parser.add_argument("--strict-baselines", action="store_true")
     parser.add_argument(
         "--reuse-baseline-report",
         help="Reuse deterministic summaries from a completed evaluation JSON",
@@ -273,12 +274,16 @@ def main():
             for k in ("ridge", "hist_gradient_boosting", "xgboost", "var", "gru", "tcn")
             if k in cached.get("methods", {})
         }
+    skipped_baselines: dict[str, str] = {}
     if not args.skip_classical and cached_baseline_results is None:
         for name in ("ridge", "hist_gradient_boosting", "xgboost", "var", "gru", "tcn"):
             try:
                 baseline_predictions[name] = fit_classical(train, test, name)
-            except Exception as exc:
+            except (RuntimeError, ValueError, ImportError) as exc:
+                skipped_baselines[name] = str(exc)
                 warnings.warn(f"Skipping baseline {name!r}: {exc}", stacklevel=2)
+                if args.strict_baselines:
+                    raise
 
     all_predictions = {"droughtcast": model_array, **baseline_predictions}
     for method, prediction in all_predictions.items():
@@ -357,7 +362,16 @@ def main():
             ]
             month_keys = sorted({m["target_dates"][lead][:7] for m in sample_meta})
 
-            def panel_losses(prediction):
+            def panel_losses(
+                prediction,
+                *,
+                y=y,
+                valid=valid,
+                scale=scale,
+                lead=lead,
+                sample_meta=sample_meta,
+                month_keys=month_keys,
+            ):
                 rows = {month: [] for month in month_keys}
                 for observed, predicted, meta in zip(
                     y, prediction[valid, scale, lead], sample_meta
@@ -459,6 +473,7 @@ def main():
         "test_samples": len(test),
         "unique_target_months": len({m["target_dates"][0][:7] for m in test.metadata}),
         "methods": results,
+        "skipped_baselines": skipped_baselines,
         "paired_inference": inference,
     }
     if calibration_report is not None:
