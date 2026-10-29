@@ -18,6 +18,7 @@ except ImportError as exc:  # Give a useful error when optional API packages are
     ) from exc
 
 from data.build_dataset import NOAA, SITES, _parse_noaa_text
+from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
 
 app = FastAPI(title="DroughtCast NASA POWER Data API", version="1.0.0")
 DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
@@ -345,12 +346,12 @@ def build(request: BuildRequest):
     (OUTPUT.parent / "dataset_metadata.json").write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": DATASET_PROTOCOL_VERSION,
                 "source": "NASA POWER daily point; NOAA teleconnection indices",
                 "period": [int(request.start), int(request.end)],
                 "spei_method": request.spei_method,
                 "spei_calibration_period": [1981, "2010-12-01"],
-                "index_alignment": "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later",
+                "index_alignment": INDEX_ALIGNMENT,
                 "sites": {name: SITES[name] for name in request.sites},
             },
             indent=2,

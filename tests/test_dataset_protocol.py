@@ -2,16 +2,37 @@ import json
 
 import pytest
 
-from data.loader import INDEX_ALIGNMENT, validate_dataset_protocol
+from data.loader import (
+    DATASET_PROTOCOL_VERSION,
+    INDEX_ALIGNMENT,
+    validate_dataset_protocol,
+)
 
 
 def test_current_dataset_protocol_is_accepted(tmp_path):
     path = tmp_path / "dataset_metadata.json"
     path.write_text(
+        json.dumps(
+            {
+                "schema_version": DATASET_PROTOCOL_VERSION,
+                "index_alignment": INDEX_ALIGNMENT,
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert validate_dataset_protocol(path)["schema_version"] == DATASET_PROTOCOL_VERSION
+
+
+def test_schema_v2_dataset_is_rejected(tmp_path):
+    path = tmp_path / "dataset_metadata.json"
+    path.write_text(
         json.dumps({"schema_version": 2, "index_alignment": INDEX_ALIGNMENT}),
         encoding="utf-8",
     )
-    assert validate_dataset_protocol(path)["schema_version"] == 2
+    with pytest.raises(
+        RuntimeError, match="predates the current teleconnection alignment"
+    ):
+        validate_dataset_protocol(path)
 
 
 def test_stale_dataset_protocol_is_rejected(tmp_path):

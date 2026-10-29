@@ -12,6 +12,7 @@ import torch
 
 from data.dataset import DroughtResearchDataset
 from data.preprocessing import ClimateNormalizer
+from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
 DEFAULT_FEATURES = [
@@ -28,10 +29,6 @@ DEFAULT_FEATURES = [
     "spei_6_obs",
     "spei_12_obs",
 ]
-DATASET_PROTOCOL_VERSION = 2
-INDEX_ALIGNMENT = "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later"
-
-
 def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json") -> dict:
     """Reject datasets built before the current leakage-alignment protocol."""
     metadata_path = Path(path)

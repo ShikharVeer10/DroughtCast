@@ -18,6 +18,7 @@ import pandas as pd
 import requests
 
 from data.quality import target_quality_report, validate_target_quality
+from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
 
 POWER_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
 POWER_VARS = [
@@ -540,7 +541,7 @@ def main() -> None:
     (output.parent / "dataset_metadata.json").write_text(
         json.dumps(
             {
-                "schema_version": 2,
+                "schema_version": DATASET_PROTOCOL_VERSION,
                 "source": "NASA POWER monthly point; NOAA PSL teleconnection indices",
                 "period": [args.start, args.end],
                 "spei_method": args.spei_method,
@@ -552,7 +553,7 @@ def main() -> None:
                 "model_features": POWER_VARS[:5]
                 + list(NOAA)
                 + ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
-                "index_alignment": "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later",
+                "index_alignment": INDEX_ALIGNMENT,
                 "speibase": str(args.speibase) if args.speibase else None,
                 "target_quality_report": str(output.parent / "target_quality.json"),
             },

@@ -10,6 +10,8 @@ from pathlib import Path
 
 import torch
 
+from data.protocol import DATASET_PROTOCOL_VERSION
+
 
 def sha256_file(path: str | Path) -> str:
     digest = hashlib.sha256()
@@ -61,6 +63,7 @@ def artifact_metadata(
         "config_hash": config_hash(config),
         "architecture_fingerprint": architecture_fingerprint(config),
         "dataset_path": str(dataset_path) if dataset_path else None,
+        "dataset_schema_version": DATASET_PROTOCOL_VERSION,
         "dataset_sha256": sha256_file(dataset_path)
         if dataset_path and Path(dataset_path).is_file()
         else None,
@@ -78,6 +81,13 @@ def validate_checkpoint_metadata(checkpoint: dict, config: dict) -> None:
         raise ValueError(
             "Checkpoint has no reproducibility metadata and is considered legacy. "
             "Retrain it with the current train.py before evaluation or inference."
+        )
+    checkpoint_schema = checkpoint["artifact_metadata"].get("dataset_schema_version")
+    if checkpoint_schema != DATASET_PROTOCOL_VERSION:
+        raise ValueError(
+            "Checkpoint dataset schema is incompatible with the current dataset protocol "
+            f"(checkpoint={checkpoint_schema}, current={DATASET_PROTOCOL_VERSION}). "
+            "Rebuild the dataset and retrain the checkpoint."
         )
     expected = architecture_fingerprint(config)
     actual = checkpoint.get("artifact_metadata", {}).get("architecture_fingerprint")

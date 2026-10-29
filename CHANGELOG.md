@@ -1,5 +1,9 @@
 # Changelog
 
+## SPEI tail stability and dataset schema v3
+
+- Stabilize SPEI tail extrapolation; schema v3; datasets and checkpoints must be rebuilt.
+
 ## Phase 1 — Target and leakage fixes (2026-10-26)
 
 - Align ONI, DMI, NAO, and PDO at month *m* to each index's published month *m−1* value; this prevents centered ONI from including month *m* and records source-month provenance for every input window.
