@@ -14,11 +14,7 @@ import yaml
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
-from utils.probability import (
-    event_z,
-    fit_platt_calibrator,
-    raw_event_probability,
-)
+from utils.probability import (event_z,fit_platt_calibrator,raw_event_probability,)
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 
@@ -31,9 +27,7 @@ class DroughtCastPredictor:
         if isinstance(chk, dict) and "config" in chk and chk["config"]:
             checkpoint_cfg = chk["config"]
         elif config_path is not None:
-            checkpoint_cfg = yaml.safe_load(
-                Path(config_path).read_text(encoding="utf-8")
-            )
+            checkpoint_cfg = yaml.safe_load(Path(config_path).read_text(encoding="utf-8"))
         else:
             raise ValueError("Configuration must be provided or present in the checkpoint.")
         if isinstance(chk, dict):
@@ -303,10 +297,7 @@ def main():
         for scale_index, scale in enumerate(SCALES):
             for lead in range(int(cfg["data"]["forecast_steps"])):
                 calibrator, n_val = calibrators[(scale_index, lead)]
-                forecast_quantiles=np.asarray(
-                    predictions[scale][site_index,lead,:],
-                    dtype=np.float64,                    
-                )
+                forecast_quantiles=np.asarray(predictions[scale][site_index,lead,:],dtype=np.float64,                    )
                 
                 if forecast_quantiles.shape !=(3,):
                     raise ValueError(f"Expected three quantiles for {site},{scale},lead{lead+1}")

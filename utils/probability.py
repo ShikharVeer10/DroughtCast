@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import numpy as np
 from scipy.special import expit
 from scipy.stats import norm
@@ -6,10 +7,8 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 
 
-def quantile_risk_below_threshold(
-    quantiles: np.ndarray, threshold: float
-) -> np.ndarray:
-    """LEGACY: linearly interpolate lower-tail risk from q10/q50/q90."""
+def quantile_risk_below_threshold(quantiles: np.ndarray, threshold: float) -> np.ndarray:
+
     values = np.asarray(quantiles, dtype=np.float64)
     if values.ndim == 0 or values.shape[-1] != 3:
         raise ValueError("Expected exactly three quantiles ordered as q10, q50, q90")
@@ -43,7 +42,6 @@ def event_z(quantiles: np.ndarray, threshold: float, min_scale: float = 0.05) ->
 
 def raw_event_probability(z:np.ndarray) -> np.ndarray:
     z=np.asarray(z,dtype=np.float64)
-
     if not np.isfinite(z).all():
         raise ValueError("Invalid event score")
 
@@ -58,8 +56,8 @@ def raw_event_probability(z:np.ndarray) -> np.ndarray:
     return probabilities
 
 
-from dataclasses import dataclass
 import warnings
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
