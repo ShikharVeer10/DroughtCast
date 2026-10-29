@@ -18,7 +18,7 @@ NASA POWER and NOAA climate indices. SPEI targets are computed from monthly prec
 
 ## Performance
 
-See generated per-scale/per-lead tables in `results/summary.csv` and site-level details in each seed JSON. The model loses to Ridge at all scales at T+1 in this run; it does not support general superiority claims.
+See `results/summary.csv` (regenerate after the schema-v3 rebuild).
 
 ## Limitations
 

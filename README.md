@@ -37,7 +37,7 @@ Run inference from the project root to print calibrated probabilities for every 
   python inference.py --site all
   ```
 
-The command loads the current dataset-matched q10/q50/q90 checkpoint at `results/ablations/quantile_cqr/model_seed_42.pt`, reads the latest six real monthly rows for each configured site from `data/monthly_sites.csv`, applies each site's saved train-only normalizer, and fits a separate isotonic probability calibrator for each accumulation scale and lead using validation data. The terminal tables print q10/q50/q90 forecasts and the calibrated probability that SPEI is at or below -1.0. The same rows are saved to `results/inference_probabilities_seed_42.csv`; pass `--output-csv PATH` to choose another destination. SPEI-3/6/12 are accumulation scales; T+1..T+4 are forecast leads.
+The command loads the current dataset-matched q10/q50/q90 checkpoint at `results/ablations/quantile_cqr/model_seed_42.pt`, reads the latest six real monthly rows for each configured site from `data/monthly_sites.csv`, applies each site's saved train-only normalizer, and fits a separate Platt-scaling calibrator (logistic regression on a piecewise-normal z-score of q10/q50/q90) for each accumulation scale and lead using validation data. The terminal tables print q10/q50/q90 forecasts and the calibrated probability that SPEI is at or below -1.0. The same rows are saved to `results/inference_probabilities_seed_42.csv`; pass `--output-csv PATH` to choose another destination. SPEI-3/6/12 are accumulation scales; T+1..T+4 are forecast leads.
 
 Export a compact research-paper table (one row per configured site and SPEI accumulation scale, with separate columns for T+1..T+4) from those exact inference results:
 
@@ -61,7 +61,7 @@ Compare validation-only isotonic and logistic calibration on the untouched test 
 python -m experiments.compare_probability_calibration
 ```
 
-The comparison is written to `results/probability_calibration/calibration_comparison_seed_42.csv`. For the current seed-42 run, isotonic calibration has lower ECE than raw probabilities in 9/12 scale/lead cells and lower Brier score in 4/12 cells. Logistic calibration is not selected because it has a higher mean test Brier score and ECE than both raw and isotonic probabilities for this run.
+Regenerate after rerunning `experiments/compare_probability_calibration.py`.
 
 The checked-in monthly observations currently end in December 2024, so the default command forecasts January through April 2025; it does not provide a live forecast for the current date. To forecast from newer observations, pass a CSV containing at least the latest six consecutive month-start rows for the site, with `date`, an optional `site` column, and every feature listed under `data.features` in the config. Values must follow the project's feature definitions, including already lag-aligned teleconnection indices and observed SPEI state features. Keep the training dataset and its saved normalizers unchanged, and pass the separate input file:
 

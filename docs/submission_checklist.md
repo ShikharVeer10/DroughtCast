@@ -17,5 +17,5 @@
 - Optional quantile, validation-calibrated CQR, and learned uncertainty task weighting are implemented; run multi-seed experiments and add CRPS/coverage results before claiming an uncertainty contribution.
 - Conformal coverage must be interpreted empirically because overlapping monthly windows violate simple exchangeability assumptions.
 - Conduct full related-work review, establish a defensible novelty claim, and obtain climate/hydrology collaborator review.
-- Report all weak results: the current five-seed model loses to Ridge at T+1 for all scales and does not beat persistence at T+1 for SPEI-6/12.
+- See `results/summary.csv` (regenerate after the schema-v3 rebuild).
 - IEEE Xplore inclusion depends on acceptance by an IEEE-sponsored conference/journal and compliance with its current author/submission requirements; software work cannot guarantee acceptance or indexing.

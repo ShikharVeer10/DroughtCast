@@ -47,7 +47,7 @@ For continuous spatial evidence:
 - **No spatial interpolation:** The model never interpolates the eight point-site predictions into rasters. Point-site interpolation is methodologically flawed and strictly prohibited by automated validator checks.
 - **Gridded per-cell inference:** Predictors from TerraClimate (precipitation, temperatures, solar radiation, wind speed) and observed targets from SPEIbase v2.10 are harmonized to a common 0.5° EPSG:4326 grid. The recurrent forecaster is evaluated independently across valid grid cells using local predictors and training-only normalization moments.
 - **Target leakage prevention:** SPEIbase target variables are never used as input predictors. Input observed SPEI features are strictly unshifted historical values at time T.
-- **Probabilistic distinction:** Formally distinguish (1) piecewise-linear quantile risk, (2) validation-only isotonic calibrated event probability $P(\text{SPEI} \le -1.0)$, and (3) validation-calibrated split-CQR interval coverage. Never claim universal calibration improvement if metrics are mixed.
+- **Probabilistic distinction:** Formally distinguish (1) piecewise-linear quantile risk, (2) validation-only Platt-scaling calibrated event probability (logistic regression on a piecewise-normal z-score of q10/q50/q90), and (3) validation-calibrated split-CQR interval coverage. Never claim universal calibration improvement if metrics are mixed.
 
 ### 6. Results
 
