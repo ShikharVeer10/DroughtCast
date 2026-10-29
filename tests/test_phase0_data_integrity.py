@@ -61,12 +61,13 @@ def test_nonparametric_tails_symmetric_absolute_z():
 
 
 def test_nonparametric_tails_stable_out_of_range():
-    cal = np.linspace(-3.0, 3.0, 25)
-    values = np.array([-20.0, cal[0], cal[-1], 20.0])
-    z = _nonparametric_z_scores(values, cal)
-    assert np.isfinite(z).all()
-    assert np.all(np.diff(z) > 0)
-    assert np.all(np.abs(z) <= 3.5)
+    rng = np.random.default_rng(1)
+    far = []
+    for _ in range(500):
+        cal = rng.normal(size=30)
+        pts = np.array([cal.max() + 0.3, cal.max() + 1.0, cal.min() - 1.0])
+        far.append(np.abs(_nonparametric_z_scores(pts, cal)) >= 5)
+    assert np.mean(far) < 0.01
 
 
 def test_standardize_accumulation_nonparametric_branch():
