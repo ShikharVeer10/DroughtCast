@@ -179,6 +179,15 @@ def render_terminal(table: pd.DataFrame, threshold: float) -> str:
     return "\n".join(rows)
 
 
+def _assert_current(path: Path) -> None:
+    checkpoints = list(Path("results/ablations/quantile_cqr").rglob("model_seed_*.pt"))
+    if checkpoints and path.stat().st_mtime < max(c.stat().st_mtime for c in checkpoints):
+        raise SystemExit(f"{path} is older than the newest checkpoint; rerun inference.py")
+    head = pd.read_csv(path, nrows=50)
+    if "calibration" in head and not head["calibration"].astype(str).str.contains("Platt").all():
+        raise SystemExit(f"{path} was not produced by the Platt pipeline; rerun inference.py")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path)
@@ -194,6 +203,7 @@ def main() -> None:
         if Path("results/inference_probabilities_ensemble.csv").is_file()
         else Path("results/inference_probabilities_seed_42.csv")
     )
+    _assert_current(input_path)
     table, months, threshold = build_table(input_path)
     args.latex_out.parent.mkdir(parents=True, exist_ok=True)
     args.csv_out.parent.mkdir(parents=True, exist_ok=True)
