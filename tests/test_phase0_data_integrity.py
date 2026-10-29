@@ -65,6 +65,8 @@ def test_nonparametric_tails_stable_out_of_range():
     far = []
     for _ in range(500):
         cal = rng.normal(size=30)
+        x = np.linspace(cal.max(), cal.max() + 3, 40)
+        assert np.all(np.diff(_nonparametric_z_scores(x, cal)) >= -1e-12)
         pts = np.array([cal.max() + 0.3, cal.max() + 1.0, cal.min() - 1.0])
         far.append(np.abs(_nonparametric_z_scores(pts, cal)) >= 5)
     assert np.mean(far) < 0.01
