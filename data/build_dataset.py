@@ -205,44 +205,62 @@ def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
     )
 
 
+def _tail_slopes(
+    sorted_cal: np.ndarray, z_cal: np.ndarray, k: int = 5
+) -> tuple[float, float]:
+    """Stable dry/wet tail slopes (z per raw unit) for extrapolation."""
+    edge_lo = (z_cal[1] - z_cal[0]) / (sorted_cal[1] - sorted_cal[0])
+    edge_hi = (z_cal[-1] - z_cal[-2]) / (sorted_cal[-1] - sorted_cal[-2])
+    if len(sorted_cal) < k + 1:
+        return float(edge_lo), float(edge_hi)
+    lo = np.polyfit(sorted_cal[: k + 1], z_cal[: k + 1], 1)[0]
+    hi = np.polyfit(sorted_cal[-(k + 1) :], z_cal[-(k + 1) :], 1)[0]
+    cap = 3.0 * np.median(np.diff(z_cal) / np.diff(sorted_cal))
+    return float(min(max(lo, 0.0), cap)), float(min(max(hi, 0.0), cap))
+
+
 def _nonparametric_z_scores(
-    values: np.ndarray, calibration: np.ndarray, max_abs_z: float = 8.0
+    values: np.ndarray, calibration: np.ndarray, max_abs_z: float = 3.5
 ) -> np.ndarray:
     """Map values to standard normals via Gringorten plotting positions.
 
     Uses one consistent plotting position for in-sample and out-of-sample
     values, linear interpolation of z between calibration quantiles, and
-    linear extrapolation beyond the calibration min/max so dry and wet tails
-    are symmetric for equal edge spacing.
+    linear extrapolation beyond the calibration min/max. Tails use the
+    least-squares slope of the outer 5 calibration points, capped at 3x the
+    median interior slope; |z| is clipped to 3.5.
     """
     if max_abs_z <= 0:
         raise ValueError("max_abs_z must be positive")
-    sorted_cal = np.sort(np.asarray(calibration, dtype=float))
+    calibration = np.asarray(calibration, dtype=float)
+    result = np.full(len(values), np.nan, dtype=float)
+    if np.isnan(calibration).any():
+        return result
+    sorted_cal = np.sort(calibration)
     sorted_cal = sorted_cal[np.isfinite(sorted_cal)]
     if len(sorted_cal) > 1:
         # Duplicate calibration values make tail slopes undefined. Collapse
         # them before fitting the plotting-position transform.
         sorted_cal = np.unique(sorted_cal)
     n = len(sorted_cal)
-    if n < 2:
+    if n == 1:
+        result[np.isfinite(values)] = 0.0
+        return np.clip(result, -max_abs_z, max_abs_z)
+    if n < 1:
         raise ValueError("nonparametric SPEI needs at least 2 calibration samples")
     ranks = np.arange(1, n + 1, dtype=float)
     p_cal = (ranks - 0.44) / (n + 0.12)
     inv = NormalDist().inv_cdf
     z_cal = np.asarray([inv(float(p)) for p in p_cal], dtype=float)
-    result = np.full(len(values), np.nan, dtype=float)
+    slope_lo, slope_hi = _tail_slopes(sorted_cal, z_cal)
     for i, raw in enumerate(values):
         v = float(raw)
         if not np.isfinite(v):
             continue
         if v <= sorted_cal[0]:
-            denom = sorted_cal[1] - sorted_cal[0]
-            slope = (z_cal[1] - z_cal[0]) / denom if denom != 0 else 0.0
-            result[i] = z_cal[0] + slope * (v - sorted_cal[0])
+            result[i] = z_cal[0] + slope_lo * (v - sorted_cal[0])
         elif v >= sorted_cal[-1]:
-            denom = sorted_cal[-1] - sorted_cal[-2]
-            slope = (z_cal[-1] - z_cal[-2]) / denom if denom != 0 else 0.0
-            result[i] = z_cal[-1] + slope * (v - sorted_cal[-1])
+            result[i] = z_cal[-1] + slope_hi * (v - sorted_cal[-1])
         else:
             result[i] = float(np.interp(v, sorted_cal, z_cal))
     return np.clip(result, -max_abs_z, max_abs_z)
