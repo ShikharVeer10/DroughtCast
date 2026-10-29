@@ -229,7 +229,8 @@ def _nonparametric_z_scores(
     values, linear interpolation of z between calibration quantiles, and
     linear extrapolation beyond the calibration min/max. Tails use the
     least-squares slope of the outer 5 calibration points, capped at 3x the
-    median interior slope; |z| is clipped to 3.5.
+    median interior slope; |z| is clipped to max_abs_z (default 3.5, to be
+    validated against SPEIbase).
     """
     if max_abs_z <= 0:
         raise ValueError("max_abs_z must be positive")
