@@ -60,6 +60,15 @@ def test_nonparametric_tails_symmetric_absolute_z():
     assert z_lo < 0 < z_hi
 
 
+def test_nonparametric_tails_stable_out_of_range():
+    cal = np.linspace(-3.0, 3.0, 25)
+    values = np.array([-20.0, cal[0], cal[-1], 20.0])
+    z = _nonparametric_z_scores(values, cal)
+    assert np.isfinite(z).all()
+    assert np.all(np.diff(z) > 0)
+    assert np.all(np.abs(z) <= 3.5)
+
+
 def test_standardize_accumulation_nonparametric_branch():
     dates = pd.date_range("1985-01-01", "2015-12-01", freq="MS")
     balance = pd.Series(np.sin(np.arange(len(dates)) / 7.0), index=dates)
