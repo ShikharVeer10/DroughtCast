@@ -15,6 +15,7 @@ Renders all required conference-ready figures in PNG (300 DPI), vector PDF, and 
 from __future__ import annotations
 
 import argparse
+import warnings
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -46,8 +47,8 @@ def overlay_boundaries(ax, boundaries_gpkg: Path | str | None) -> None:
             try:
                 gdf = gpd.read_file(p)
                 gdf.boundary.plot(ax=ax, color="black", linewidth=0.7, alpha=0.6)
-            except Exception:
-                pass
+            except (OSError, ValueError) as exc:
+                warnings.warn(f"Skipping boundary overlay {p}: {exc}", stacklevel=2)
 
 
 def plot_elevation_map(
