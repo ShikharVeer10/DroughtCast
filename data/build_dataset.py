@@ -17,8 +17,8 @@ import numpy as np
 import pandas as pd
 import requests
 
-from data.quality import target_quality_report, validate_target_quality
 from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
+from data.quality import target_quality_report, validate_target_quality
 
 POWER_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
 POWER_VARS = [
@@ -378,12 +378,12 @@ def ingest_speibase(
                 name.lower(): name for name in list(ds.coords) + list(ds.variables)
             }
 
-            def find(*choices):
+            def find(*choices, names=names, path=path, coords=ds.coords):
                 for choice in choices:
                     if choice in names:
                         return names[choice]
                 raise ValueError(
-                    f"No coordinate {choices} in {path}; found {list(ds.coords)}"
+                    f"No coordinate {choices} in {path}; found {list(coords)}"
                 )
 
             lat_name, lon_name, time_name = (

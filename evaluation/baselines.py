@@ -176,7 +176,7 @@ def _split_train_val_tensors(dataset, scale: int, val_fraction: float = 0.15):
     y = dataset.Y[valid, scale]
     if len(x) < 10:
         raise RuntimeError(f"Insufficient training windows for scale index {scale}")
-    n_val = max(1, int(round(len(x) * val_fraction)))
+    n_val = max(1, round(len(x) * val_fraction))
     n_val = min(n_val, len(x) - 1)
     return x[:-n_val], y[:-n_val], x[-n_val:], y[-n_val:]
 
@@ -222,7 +222,7 @@ def fit_var_baseline(train_dataset, test_dataset, maxlags=3):
         ) from _VAR_IMPORT_ERROR
     y_test = test_dataset.Y.numpy()
     pred = np.full_like(y_test, np.nan, dtype=float)
-    sites = sorted(set(m["site"] for m in train_dataset.metadata))
+    sites = sorted({m["site"] for m in train_dataset.metadata})
     for site in sites:
         train_idx = [
             i for i, m in enumerate(train_dataset.metadata) if m["site"] == site

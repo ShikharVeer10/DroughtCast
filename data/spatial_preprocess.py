@@ -76,9 +76,11 @@ def harmonize_grid(
 
 def enforce_leakage_controls(
     predictor_names: list[str],
-    target_names: list[str] = list(SCALES),
+    target_names: list[str] | None = None,
 ) -> None:
     """Validate that targets are not present in input predictors."""
+    if target_names is None:
+        target_names = list(SCALES)
     overlap = set(predictor_names).intersection(target_names)
     if overlap:
         raise ValueError(

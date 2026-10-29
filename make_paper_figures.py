@@ -2816,12 +2816,12 @@ def figure_p14_ablation_forest():
     forest = forest.sort_values("delta_rmse", ascending=True).reset_index(drop=True)
     forest_data = forest.copy()
     forest_data.attrs["seeds"] = sorted(
-        set(
+        {
             seed
             for value in forest.get("seeds", pd.Series(dtype=str)).dropna()
             for seed in str(value).split(",")
             if seed
-        ),
+        },
         key=int,
     )
     test_predictions = ROOT / "results/test_predictions_seed_42.csv"
@@ -3052,7 +3052,7 @@ def main():
         try:
             renderers[name]()
             _safe_print(f"{name}: generated PDF, PNG, plotted CSV, and provenance JSON")
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - record a blocked figure and continue reporting others
             _safe_print(f"{name}: blocked - {exc}")
             errors.append(f"{name}: {exc}")
     if args.qa:

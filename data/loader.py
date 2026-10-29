@@ -201,11 +201,11 @@ def load_site_table(
             if split_parts[0] is None or not np.all(split_parts == split_parts[0]):
                 continue
             split = str(split_parts[0])
-            if holdout_regions:
-                if (region in holdout_regions and split != "test") or (
-                    region not in holdout_regions and split == "test"
-                ):
-                    continue
+            if holdout_regions and (
+                (region in holdout_regions and split != "test")
+                or (region not in holdout_regions and split == "test")
+            ):
+                continue
             x = normalized[input_idx]
             y = targets[target_idx].T  # [scale, lead]
             mask = np.isfinite(y)

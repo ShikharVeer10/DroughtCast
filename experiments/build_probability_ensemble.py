@@ -1,12 +1,12 @@
 from __future__ import annotations
+
+import hashlib
 import subprocess
 import sys
-import hashlib
 from pathlib import Path
 
 import pandas as pd
 import torch
-
 
 KEYS = ["site", "input_start_month", "input_end_month", "target_month", "scale", "lead", "drought_threshold_spei"]
 

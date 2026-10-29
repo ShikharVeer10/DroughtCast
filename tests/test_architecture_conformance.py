@@ -51,7 +51,7 @@ def test_encoder_output_shape(model):
 
 def test_attention_weights_shape_sum_and_nonneg(model):
     x = torch.randn(4, 6, 12)
-    preds, aux = model(x)
+    _, aux = model(x)
     alpha = aux["attention"]
     assert alpha.shape == (4, 6, 1)
     assert torch.allclose(alpha.sum(dim=1), torch.ones(4, 1), atol=1e-5)

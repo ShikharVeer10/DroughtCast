@@ -1,8 +1,10 @@
 
 from __future__ import annotations
+
 import argparse
 from decimal import Decimal
 from pathlib import Path
+
 import pandas as pd
 
 REQUIRED = {
@@ -132,9 +134,11 @@ def render_latex(
             r"\end{tabular}",
             r"\vspace{2pt}",
             r"\begin{minipage}{0.96\textwidth}\footnotesize",
-            "Entries are calibrated event probabilities from the saved quantile checkpoint; they are not binary classifications. "
-            f"Forecast target months are {', '.join(target_months)}. "
+            (
+                "Entries are calibrated event probabilities from the saved quantile checkpoint; they are not binary classifications. "
+                + f"Forecast target months are {', '.join(target_months)}. "
             "Sites are the locations configured in this dataset, not a complete state-level coverage.\\\\",
+            ),
             r"\end{minipage}",
             r"\end{table*}",
         ]

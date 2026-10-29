@@ -19,7 +19,7 @@ def effective_sample_size(values) -> int:
         if rho <= 0:
             break
         total += 2.0 * rho
-    return max(1, min(n, int(round(n / total))))
+    return max(1, min(n, round(n / total)))
 
 
 def holm_adjust(p_values: list[float]) -> list[float]:
@@ -122,7 +122,9 @@ def paired_block_bootstrap_rmse_ci(
     prediction, baseline, target, groups, n_boot: int = 2000, seed: int = 123
 ) -> dict:
     """Bootstrap paired RMSE difference by site-year blocks to reduce overlap leakage."""
-    p, b, y = map(lambda x: np.asarray(x, dtype=float), (prediction, baseline, target))
+    p, b, y = (
+        np.asarray(x, dtype=float) for x in (prediction, baseline, target)
+    )
     groups = np.asarray(groups)
     valid = np.isfinite(p) & np.isfinite(b) & np.isfinite(y)
     p, b, y, groups = p[valid], b[valid], y[valid], groups[valid]

@@ -1,5 +1,7 @@
 from __future__ import annotations
+
 import torch
+
 
 def integrated_gradients(
     model,
@@ -60,7 +62,6 @@ def batch_interpretability(
     steps: int = 64,
 ) -> dict:
     attributions = {s: [] for s in scales}
-    attention_rows = []
     for scale in scales:
         attr = integrated_gradients(model, inputs, scale, lead, steps=steps)
         attributions[scale] = attr.detach().cpu().numpy()

@@ -105,7 +105,7 @@ def main():
     else:
         raise ValueError(f"Unexpected attention shape {attention.shape}")
 
-    lag_count, sample_count, feature_count = (
+    lag_count, sample_count, _ = (
         val.X.shape[1],
         val.X.shape[0],
         val.X.shape[2],

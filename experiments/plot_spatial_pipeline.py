@@ -201,7 +201,7 @@ def plot_threshold_comparisons(
 
     for ax, (th, title) in zip(axes, thresholds):
         binary = (pred <= th).astype(float)
-        im = ax.pcolormesh(
+        ax.pcolormesh(
             ds["lon"],
             ds["lat"],
             binary,
@@ -245,7 +245,6 @@ def plot_spatial_reliability(
     if rel_rows:
         x = [r["mean_predicted"] for r in rel_rows]
         y = [r["observed_frequency"] for r in rel_rows]
-        counts = [r["count"] for r in rel_rows]
         ax.plot(
             x,
             y,

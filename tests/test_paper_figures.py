@@ -47,7 +47,7 @@ def test_figure_code_has_no_random_number_or_random_module_usage():
 def test_ieee_width_constants_and_saved_figures_have_data_and_provenance(monkeypatch):
     assert SINGLE_COLUMN_IN == pytest.approx(3.5)
     assert DOUBLE_COLUMN_IN == pytest.approx(7.16)
-    fig, ax = plt.subplots(figsize=(SINGLE_COLUMN_IN, 2.0))
+    fig, _ = plt.subplots(figsize=(SINGLE_COLUMN_IN, 2.0))
     assert fig.get_size_inches()[0] == pytest.approx(3.5)
     with tempfile.TemporaryDirectory(dir=ROOT) as temp_dir:
         tmp_path = Path(temp_dir)

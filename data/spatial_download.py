@@ -279,7 +279,7 @@ def main() -> None:
     if not gadm_stat["available"]:
         blockers.append(f"GADM boundary geopackages missing from {args.gadm_dir}")
 
-    manifest = generate_provenance_manifest(
+    generate_provenance_manifest(
         spec, spei_stat, tc_stat, dem_stat, gadm_stat, args.output_manifest
     )
     print(f"Written spatial provenance manifest to: {args.output_manifest}")

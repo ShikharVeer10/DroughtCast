@@ -3,8 +3,8 @@ import pandas as pd
 import pytest
 
 from data.build_dataset import _nonparametric_z_scores
-from data.quality import target_quality_report
 from data.protocol import DATASET_PROTOCOL_VERSION
+from data.quality import target_quality_report
 from utils.artifacts import validate_checkpoint_metadata
 
 

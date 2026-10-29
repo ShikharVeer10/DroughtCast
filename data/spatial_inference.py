@@ -48,7 +48,7 @@ def run_cell_inference(
 
             # Test predictions
             x_test = torch.from_numpy(cell.X_test).to(device)
-            preds_test, aux = model(x_test)
+            preds_test, _ = model(x_test)
             test_preds_dict = {s: preds_test[s].cpu().numpy() for s in SCALES}
 
             results.append(
@@ -167,7 +167,7 @@ def build_evidence_netcdf(
     all_dates = set()
     for cr in cell_results:
         all_dates.update(cr["test_dates"])
-    test_dates = sorted(list(all_dates))
+    test_dates = sorted(all_dates)
 
     if not test_dates:
         raise ValueError("No valid test dates found across spatial cells")

@@ -84,14 +84,7 @@ def test_oni_shifted_plus_one_month():
     """Feature at month m must use ONI centered on m-1 (no look-ahead into m+1)."""
     from data.build_dataset import _parse_noaa_text
 
-    text = "\n".join(
-        [
-            "SEAS  YR   TOTAL  ANOM",
-            "DJF  2000   0.0  1.00",
-            "JFM  2000   0.0  2.00",
-            "FMA  2000   0.0  3.00",
-        ]
-    )
+    text = "SEAS  YR   TOTAL  ANOM\nDJF  2000   0.0  1.00\nJFM  2000   0.0  2.00\nFMA  2000   0.0  3.00"
     series = _parse_noaa_text("oni", text)
     # DJF -> January, JFM -> February
     assert series.loc[pd.Timestamp("2000-01-01")] == pytest.approx(1.0)
@@ -135,7 +128,6 @@ def test_spei_obs_feature_names_and_no_shift_parity(tmp_path):
     assert len(data["train"]) > 0
     # Last input row SPEI obs must equal last_observed_spei (information parity).
     sample = data["train"].metadata[0]
-    last_x = data["train"].X[0, -1].numpy()
     # Features were normalized; check metadata dates instead for leakage below.
     assert "spei_3" in sample["last_observed_spei"]
 

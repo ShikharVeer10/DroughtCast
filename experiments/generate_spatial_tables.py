@@ -57,7 +57,7 @@ def generate_tables(
     # 2. Drought Contingency Scores Summary
     rows_contingency = []
     for scale, thresholds in report.get("thresholds", {}).items():
-        for thresh_key, ev in thresholds.items():
+        for ev in thresholds.values():
             th_val = ev.get("threshold")
             rows_contingency.append(
                 {

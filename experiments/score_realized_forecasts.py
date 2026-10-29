@@ -1,13 +1,12 @@
 """Score ensemble probabilities against realized 2025 observed SPEI."""
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from utils.probability import brier_score, reliability_table
-
 
 SPEI_COLUMNS = {"SPEI_3": "spei_3_obs", "SPEI_6": "spei_6_obs", "SPEI_12": "spei_12_obs"}
 

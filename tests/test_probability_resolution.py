@@ -1,14 +1,14 @@
 import numpy as np
 import pytest
 
+from experiments.build_probability_ensemble import aggregate_seed_probabilities
+from experiments.export_probability_table import format_probability, format_scale_label
 from utils.probability import (
     event_z,
     fit_platt_calibrator,
     quantile_risk_below_threshold,
     raw_event_probability,
 )
-from experiments.export_probability_table import format_probability, format_scale_label
-from experiments.build_probability_ensemble import aggregate_seed_probabilities
 
 
 def test_quantile_nodes_and_distinguishes_tail_forecasts():
@@ -62,9 +62,15 @@ def test_probability_table_formatter_uses_cutoff_and_scale_labels():
 def test_ensemble_mean_is_between_seed_min_and_max():
     import pandas as pd
 
-    base = dict(site="phoenix", input_start_month="2024-07", input_end_month="2024-12",
-                target_month="2025-01", scale="SPEI_3", lead="T+1",
-                drought_threshold_spei=-1.0)
+    base = {
+        "site": "phoenix",
+        "input_start_month": "2024-07",
+        "input_end_month": "2024-12",
+        "target_month": "2025-01",
+        "scale": "SPEI_3",
+        "lead": "T+1",
+        "drought_threshold_spei": -1.0,
+    }
     result = aggregate_seed_probabilities([
         pd.DataFrame([{**base, "calibrated_probability": value}])
         for value in (0.2, 0.8, 0.5)

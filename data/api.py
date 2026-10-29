@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import json
 from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import json
 import numpy as np
 import pandas as pd
 import requests
@@ -21,6 +21,7 @@ from data.build_dataset import NOAA, SITES, _parse_noaa_text
 from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
 
 app = FastAPI(title="DroughtCast NASA POWER Data API", version="1.0.0")
+UPLOAD_FILE_REQUIRED = File(...)
 DAILY_URL = "https://power.larc.nasa.gov/api/temporal/daily/point"
 PARAMETERS = [
     "PRECTOTCORR",
@@ -371,7 +372,9 @@ def build(request: BuildRequest):
 
 @app.post("/upload/{site}")
 async def upload_power_csv(
-    site: str, file: UploadFile = File(...), spei_method: str = "nonparametric"
+    site: str,
+    file: UploadFile = UPLOAD_FILE_REQUIRED,
+    spei_method: str = "nonparametric",
 ):
     """Import a NASA POWER daily CSV export for one configured site."""
     if site not in SITES:
@@ -418,7 +421,6 @@ def header_row(content: bytes) -> int:
 
 
 def normalize_uploaded(table: pd.DataFrame) -> pd.DataFrame:
-    lookup = {str(c).strip().upper(): c for c in table.columns}
     data = table.rename(columns={c: str(c).strip().upper() for c in table.columns})
     if "YYYYMMDD" in data:
         dates = pd.to_datetime(data.pop("YYYYMMDD").astype(str), format="%Y%m%d")
