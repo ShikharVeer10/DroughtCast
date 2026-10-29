@@ -1,5 +1,6 @@
 # DroughtCast Core Scientific & Machine Learning Dependencies
-# Pinned for strict reproducibility across conference artifact evaluation environments
+# Lower bounds for installation. Exact versions used for the paper are in requirements.lock
+# (generated with `pip freeze > requirements.lock` from the .venv that produced the results).
 
 numpy==1.26.4
 scipy>=1.14.0
