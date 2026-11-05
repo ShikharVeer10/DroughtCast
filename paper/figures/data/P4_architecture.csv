@@ -1,0 +1,7 @@
+phase,component,description,order
+1,Inputs,6 monthly steps; 12 climate and index; features + observed; SPEI state,0
+2,Encoder,"LSTM 64; Dropout 0.2; LSTM 32; [B, 6, 32]",1
+3,Attention,"Additive attention; over 6 input steps; [B, 6, 1]",2
+4,Context,One shared context; c in R^32,3
+5,Heads,"Three direct heads; SPEI-3, SPEI-6,; SPEI-12 scales; T+1..T+4",4
+6,Output,"Point output; [B, 3, 4]; plain MSE",5

@@ -44,3 +44,4 @@ data/target_quality.json
 results/
 outputs/
 *.log
+.pytest_tmp/

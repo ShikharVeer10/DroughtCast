@@ -57,6 +57,11 @@ def merge(base, update):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config",
+        default="configs/base_diagram.yaml",
+        help="Base training configuration",
+    )
     parser.add_argument("--seeds", nargs="+", type=int, default=[11, 22, 33, 44, 55])
     parser.add_argument(
         "--variants", nargs="+", choices=sorted(VARIANTS), default=sorted(VARIANTS)
@@ -74,7 +79,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.probability_calibration and "quantile_cqr" not in args.variants:
         parser.error("--probability-calibration requires --variants quantile_cqr")
-    base = yaml.safe_load(Path("configs/config.yaml").read_text(encoding="utf-8"))
+    base = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     out_dir = Path("results/ablations")
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {

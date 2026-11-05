@@ -1,4 +1,3 @@
-"""Dataset quality diagnostics used before scientific evaluation."""
 
 from __future__ import annotations
 
@@ -11,10 +10,7 @@ import pandas as pd
 SCALES = ("spei_3", "spei_6", "spei_12")
 
 
-def target_quality_report(
-    frame: pd.DataFrame, calibration_end: str = "2010-12-01"
-) -> dict:
-    """Return per-scale/site distribution and missingness diagnostics."""
+def target_quality_report(frame: pd.DataFrame, calibration_end: str = "2010-12-01") -> dict:
     required = {"site", "date", *SCALES}
     missing = required.difference(frame.columns)
     if missing:
@@ -74,16 +70,38 @@ def validate_target_quality(report: dict, fail_on_warning: bool = False) -> None
     if fail_on_warning and warnings:
         raise ValueError("Target quality validation failed: " + "; ".join(warnings))
 
+def validate_clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    df=df.replace([-999.0,-99.0,-9999,-32768],np.nan)
+    if "prectotcorr" in df.columns:
+        df.loc[df["prectotcorr"]<0, "prectotcorr"]=0.0
 
-def write_target_quality_report(
-    csv_path: str | Path, output_path: str | Path, fail_on_warning: bool = False
-) -> dict:
+    if all(c in df.columns for c in ["t2m_min","t2m","t2m_max"]):
+        invalid_temp=(df["t2m_min"]>df["t2m"]) | (df["t2m"]>df["t2m_max"])
+        df.loc[invalid_temp,["t2m","t2m_max","t2m_min"]]=np.nan
+
+
+    for soil_col in ["gwettop","gwetroot"]:
+        if soil_col in df.columns:
+            df[soil_col]=df[soil_col].clip(0.0,1.0)
+
+    #Vegetation index NDVI bounds [-0.2,1.0] and VCI Percentage bounds
+    if "ndvi" in df.columns:
+        df["ndvi"]=df["ndvi"].clip(-0.2,1.0)
+    if "vci" in df.columns:
+        df["vci"]=df["vci"].clip(0.0,100.0)
+
+    #Vapor pressure deficit
+    if "vpd" in df.columns:
+        df.loc[df["vpd"]<0,"vpd"]=0.0
+
+    return df
+
+
+def write_target_quality_report(csv_path: str | Path, output_path: str | Path, fail_on_warning: bool = False) -> dict:
     frame = pd.read_csv(csv_path, parse_dates=["date"])
     report = target_quality_report(frame)
     validate_target_quality(report, fail_on_warning)
-    Path(output_path).write_text(
-        json.dumps(report, indent=2, allow_nan=True), encoding="utf-8"
-    )
+    Path(output_path).write_text(json.dumps(report, indent=2, allow_nan=True), encoding="utf-8")
     return report
 
 
@@ -95,7 +113,5 @@ if __name__ == "__main__":
     parser.add_argument("--output", default="results/target_quality.json")
     parser.add_argument("--fail-on-warning", action="store_true")
     args = parser.parse_args()
-    result = write_target_quality_report(
-        args.csv_path, args.output, args.fail_on_warning
-    )
+    result = write_target_quality_report(args.csv_path, args.output, args.fail_on_warning)
     print(json.dumps(result, indent=2, allow_nan=True))

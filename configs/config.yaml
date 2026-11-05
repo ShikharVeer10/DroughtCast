@@ -1,50 +1,75 @@
-# Default training config. Diagram-faithful defaults match configs/base_diagram.yaml.
-# Unknown keys are rejected by models.config_schema.validate_config.
-experiment:
-  name: "DroughtCast multi-scale SPEI forecasting"
-  seed: 42
-
+study_area:
+  state: Maharashtra
+  country: India
+  bbox:
+    lat_min: 15.6
+    lat_max: 22.1
+    lon_min: 72.6
+    lon_max: 80.9
 sites:
-  guntur: {lat: 15.9129, lon: 79.74, region: south_asia}
-  jaipur: {lat: 26.9124, lon: 75.7873, region: south_asia}
-  nagpur: {lat: 21.1458, lon: 79.0882, region: south_asia}
-  murray_darling: {lat: -34.0, lon: 143.0, region: australia}
-  addis_ababa: {lat: 9.03, lon: 38.74, region: east_africa}
-  phoenix: {lat: 33.4484, lon: -112.074, region: us_southwest}
-  seville: {lat: 37.3891, lon: -5.9845, region: mediterranean}
-  pretoria: {lat: -25.7479, lon: 28.2293, region: southern_africa}
-
-data:
-  path: "data/monthly_sites.csv"
-  metadata_path: "data/meta.json"
-  start_year: 1981
-  end_year: 2024
-  features: [PRECTOTCORR, T2M, T2MDEW, WS10M, ALLSKY_SFC_SW_DWN, oni, dmi, nao, pdo, spei_3_obs, spei_6_obs, spei_12_obs]
-  seq_len: 6
-  forecast_steps: 4
-
+- id: aurangabad
+  name: Aurangabad
+  region: Marathwada
+  lat: 19.8762
+  lon: 75.3433
+- id: latur
+  name: Latur
+  region: Marathwada
+  lat: 18.4088
+  lon: 76.5604
+- id: beed
+  name: Beed
+  region: Marathwada
+  lat: 18.9891
+  lon: 75.7601
+- id: nanded
+  name: Nanded
+  region: Marathwada
+  lat: 19.1383
+  lon: 77.321
+- id: nagpur
+  name: Nagpur
+  region: Vidarbha
+  lat: 21.1458
+  lon: 79.0882
+- id: akola
+  name: Akola
+  region: Vidarbha
+  lat: 20.7002
+  lon: 77.0082
+- id: amravati
+  name: Amravati
+  region: Vidarbha
+  lat: 20.9374
+  lon: 77.7796
+- id: pune
+  name: Pune
+  region: Madhya_Maharashtra
+  lat: 18.5204
+  lon: 73.8567
+- id: solapur
+  name: Solapur
+  region: Madhya_Maharashtra
+  lat: 17.6599
+  lon: 75.9064
+- id: nashik
+  name: Nashik
+  region: Madhya_Maharashtra
+  lat: 19.9975
+  lon: 73.7898
+- id: mumbai
+  name: Mumbai
+  region: Konkan
+  lat: 19.076
+  lon: 72.8777
+- id: ratnagiri
+  name: Ratnagiri
+  region: Konkan
+  lat: 16.9902
+  lon: 73.312
 model:
-  hidden_dim_1: 64
-  hidden_dim_2: 32
-  dropout: 0.2
-  encoder: lstm
-  attention: shared
-  heads: direct
-  use_cascaded_decoder: false
-  variable_gate: false
-  separate_encoders: false
-  static_context: false
-  input_extras: []
-  consistency_weight: 0.0
-
+  use_cascaded_decoder: true
+  variable_gate: true
+  attention: multi_horizon
 training:
-  batch_size: 32
-  epochs: 100
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  early_stopping_patience: 12
-  lr_patience: 5
-  extreme_weight: 1.0
-  checkpoint_dir: checkpoints
-  loss: mse
-  task_weighting: fixed
+  loss: uncertainty_weighted

@@ -1,5 +1,4 @@
-"""Run leave-one-region-out cross-validation testing spatial generalization across agro-climatic zones."""
-
+from __future__ import annotations
 import argparse
 import json
 import subprocess
@@ -17,10 +16,18 @@ def main():
     parser.add_argument("--regions", nargs="+", default=None)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+
     config = yaml.safe_load(Path("configs/config.yaml").read_text(encoding="utf-8"))
+    sites_data = config.get("sites", [])
+    if isinstance(sites_data, dict):
+        site_iter = sites_data.values()
+    else:
+        site_iter = sites_data
+
     regions = args.regions or sorted(
-        {site["region"] for site in config["sites"].values()}
+        {site["region"] for site in site_iter if "region" in site}
     )
+
     root = Path("results/region_holdouts")
     root.mkdir(parents=True, exist_ok=True)
     (root / "manifest.json").write_text(

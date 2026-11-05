@@ -14,7 +14,11 @@ import yaml
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
-from utils.probability import (event_z,fit_platt_calibrator,raw_event_probability,)
+from utils.probability import (
+    event_z,
+    fit_platt_calibrator,
+    raw_event_probability,
+)
 
 SCALES = ("spei_3", "spei_6", "spei_12")
 

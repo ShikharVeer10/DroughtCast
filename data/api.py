@@ -31,6 +31,8 @@ PARAMETERS = [
     "ALLSKY_SFC_SW_DWN",
     "T2M_MAX",
     "T2M_MIN",
+    "GWETTOP",
+    "GWETROOT"
 ]
 RAW_DIR = Path("data/raw/daily")
 OUTPUT = Path("data/monthly_sites.csv")

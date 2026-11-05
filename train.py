@@ -1,4 +1,3 @@
-"""Train on train windows, select on validation loss, never inspect test for selection."""
 
 import argparse
 import json
@@ -25,20 +24,11 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = False
 
 
-def masked_loss(
-    prediction,
-    target,
-    mask,
-    extreme_weight=1.0,
-    extreme_threshold=-1.5,
-    loss_kind="mse",
-):
+def masked_loss(prediction,target,mask,extreme_weight=1.0,extreme_threshold=-1.5,loss_kind="mse",):
     weights = torch.where(target <= extreme_threshold, extreme_weight, 1.0)
     valid = mask.to(prediction.dtype) * weights
     if loss_kind == "huber":
-        point_loss = torch.nn.functional.huber_loss(
-            prediction, target, reduction="none"
-        )
+        point_loss = torch.nn.functional.huber_loss(prediction, target, reduction="none")
     elif loss_kind in ("mse", "squared_error"):
         point_loss = (prediction - target) ** 2
     else:
@@ -46,48 +36,31 @@ def masked_loss(
     return (point_loss * valid).sum() / valid.sum().clamp_min(1.0)
 
 
-def pinball_loss(
-    prediction, target, mask, quantiles, extreme_weight=1.0, extreme_threshold=-1.5
-):
-    q = torch.as_tensor(
-        quantiles, dtype=prediction.dtype, device=prediction.device
-    ).view(1, 1, -1)
+def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0, extreme_threshold=-1.5):
+    q = torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device).view(1, 1, -1)
     error = target.unsqueeze(-1) - prediction
     losses = torch.maximum(q * error, (q - 1.0) * error)
-    weights = torch.where(target <= extreme_threshold, extreme_weight, 1.0).unsqueeze(
-        -1
-    )
+    weights = torch.where(target <= extreme_threshold, extreme_weight, 1.0).unsqueeze(-1)
     valid = mask.unsqueeze(-1).to(prediction.dtype) * weights
     return (losses * valid).sum() / valid.sum().clamp_min(1.0)
 
 
 def unweighted_mse(prediction, target, mask):
-    """Plain masked MSE used for checkpoint selection (ignores task/extreme weights)."""
     valid = mask.to(prediction.dtype)
     return (((prediction - target) ** 2) * valid).sum() / valid.sum().clamp_min(1.0)
 
 
 def consistency_loss(predictions):
-    """Penalize disagreement between neighboring accumulation-scale forecasts."""
-    return sum(
-        torch.mean((predictions[a] - predictions[b]) ** 2)
-        for a, b in (("spei_3", "spei_6"), ("spei_6", "spei_12"))
-    )
+    return sum(torch.mean((predictions[a] - predictions[b]) ** 2) for a, b in (("spei_3", "spei_6"), ("spei_6", "spei_12")))
 
 
 def crps_loss(prediction, target, mask, quantiles):
-    q = torch.as_tensor(
-        quantiles, dtype=prediction.dtype, device=prediction.device
-    ).view(1, 1, -1)
+    q = torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device).view(1, 1, -1)
     error = target.unsqueeze(-1) - prediction
     losses = torch.maximum(q * error, (q - 1.0) * error)
     valid = mask.unsqueeze(-1).to(prediction.dtype)
-    q_widths = torch.diff(
-        torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device)
-    )
-    weights = torch.cat(
-        [q_widths[:1] / 2, (q_widths[:-1] + q_widths[1:]) / 2, q_widths[-1:] / 2]
-    ).view(1, 1, -1)
+    q_widths = torch.diff(torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device))
+    weights = torch.cat([q_widths[:1] / 2, (q_widths[:-1] + q_widths[1:]) / 2, q_widths[-1:] / 2]).view(1, 1, -1)
     return (losses * valid * weights).sum() / valid.sum().clamp_min(1.0)
 
 
@@ -158,7 +131,6 @@ def epoch_loss(
                         unweighted_mse(predictions[k], y[:, i], mask[:, i])
                     )
             if task_weighting == "uncertainty" and task_log_vars is not None:
-                # Kendall et al.: exp(-s_i) * L_i + s_i
                 loss = sum(
                     torch.exp(-task_log_vars[i]) * value + task_log_vars[i]
                     for i, value in enumerate(task_losses)

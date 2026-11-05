@@ -137,7 +137,7 @@ def render_latex(
             (
                 "Entries are calibrated event probabilities from the saved quantile checkpoint; they are not binary classifications. "
                 + f"Forecast target months are {', '.join(target_months)}. "
-            "Sites are the locations configured in this dataset, not a complete state-level coverage.\\\\",
+                + "Sites are the locations configured in this dataset, not a complete state-level coverage.\\\\"
             ),
             r"\end{minipage}",
             r"\end{table*}",

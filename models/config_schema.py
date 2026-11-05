@@ -1,5 +1,3 @@
-"""Allowed configuration keys and validation helpers."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -50,7 +48,26 @@ ALLOWED_TRAINING = {
     "task_weighting",
 }
 
-# Keys removed from the diagram config; reject if present.
+expected_features = [
+    "prectotcorr",
+    "t2m",
+    "t2m_max",
+    "t2m_min",
+    "t2mdew",
+    "ws10m",
+    "allsky_sfc_sw_dwn",
+    "gwettop",
+    "gwetroot",
+    "ndvi",
+    "vci",
+    "vpd",
+    "oni_lag1",
+    "dmi_lag1",
+    "month_sin",
+    "month_cos",
+]
+input_dim = len(expected_features)
+
 DEAD_MODEL_KEYS = {
     "hidden_dim",
     "out_hidden_dim",
@@ -63,21 +80,15 @@ DEAD_MODEL_KEYS = {
 }
 
 
-def _reject_unknown(
-    section: str, values: dict[str, Any] | None, allowed: set[str]
-) -> None:
+def _reject_unknown(section: str, values: dict[str, Any] | None, allowed: set[str]) -> None:
     if not values:
         return
     unknown = set(values) - allowed
     if unknown:
-        raise ValueError(
-            f"Unknown config key(s) under '{section}': {sorted(unknown)}. "
-            f"Allowed: {sorted(allowed)}"
-        )
+        raise ValueError(f"Unknown config key(s) under '{section}': {sorted(unknown)}. "f"Allowed: {sorted(allowed)}")
 
 
 def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
-    """Reject unknown / dead keys with a clear error. Returns cfg unchanged."""
     if not isinstance(cfg, dict):
         raise TypeError("config must be a mapping")
     unknown_top = set(cfg) - ALLOWED_TOP

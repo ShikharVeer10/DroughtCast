@@ -5,12 +5,14 @@ experiment:
   seed: 42
 
 spatial:
-  speibase_dir: "data/raw/spatial/speibase"
-  terraclimate_dir: "data/raw/spatial/terraclimate"
-  dem_path: "data/raw/spatial/dem/copernicus_dem_glo30.tif"
-  boundaries_dir: "data/raw/spatial/gadm"
-  harmonized_path: "data/spatial_harmonized.nc"
-  output_dir: "results/spatial_pipeline"
+  resolution: 0.25
+  bounding_box:
+    lat_min: 15.6
+    lat_max: 22.1
+    lon_min: 72.6
+    lon_max: 80.9
+  interpolation: "bilinear"
+  mask_state: "Maharashtra"
 
   grid:
     crs: "EPSG:4326"

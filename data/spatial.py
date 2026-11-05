@@ -1,20 +1,13 @@
-"""Validation and metrics for gridded spatial drought evidence.
-
-The spatial product must contain observed targets and model predictions on the
-same latitude/longitude/time grid.  This module deliberately does not
-interpolate point-site predictions into a raster.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import xarray as xr
 
 SCALES = ("spei_3", "spei_6", "spei_12")
-
 
 @dataclass(frozen=True)
 class SpatialGrid:
@@ -31,19 +24,12 @@ def _coord(ds: xr.Dataset, names: tuple[str, ...]) -> str:
     raise ValueError(f"Spatial dataset requires one of coordinates {names}")
 
 
-def load_spatial_grid(
-    path: str | Path, observed_prefix: str = "obs_", predicted_prefix: str = "pred_"
-) -> SpatialGrid:
-    """Load and validate a NetCDF grid with observed and predicted SPEI."""
+def load_spatial_grid(path: str | Path, observed_prefix: str = "obs_", predicted_prefix: str = "pred_") -> SpatialGrid:
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"Spatial grid not found: {path}")
     ds = xr.open_dataset(path)
-    lat, lon, time = (
-        _coord(ds, ("lat", "latitude")),
-        _coord(ds, ("lon", "longitude")),
-        _coord(ds, ("time", "date")),
-    )
+    lat, lon, time = (_coord(ds, ("lat", "latitude")),_coord(ds, ("lon", "longitude")),_coord(ds, ("time", "date")),)
     if ds[lat].ndim != 1 or ds[lon].ndim != 1:
         raise ValueError("Latitude and longitude coordinates must be one-dimensional")
     if len(ds[lat]) < 2 or len(ds[lon]) < 2:
@@ -54,25 +40,15 @@ def load_spatial_grid(
     required += [f"{predicted_prefix}{scale}" for scale in SCALES]
     missing = [name for name in required if name not in ds.data_vars]
     if missing:
-        raise ValueError(
-            f"Spatial evidence requires observed and predicted fields: {missing}"
-        )
+        raise ValueError(f"Spatial evidence requires observed and predicted fields: {missing}")
     for name in required:
         dims = set(ds[name].dims)
         if not {lat, lon, time}.issubset(dims):
-            raise ValueError(
-                f"{name} must have dimensions including {time}, {lat}, {lon}"
-            )
+            raise ValueError(f"{name} must have dimensions including {time}, {lat}, {lon}")
     return SpatialGrid(ds, lat, lon, time)
 
 
-def spatial_metrics(
-    grid: SpatialGrid,
-    threshold: float = -1.0,
-    observed_prefix: str = "obs_",
-    predicted_prefix: str = "pred_",
-) -> dict:
-    """Return finite-cell metrics and drought event scores by scale."""
+def spatial_metrics(grid: SpatialGrid,threshold: float = -1.0,observed_prefix: str = "obs_",predicted_prefix: str = "pred_",) -> dict:
     out = {}
     for scale in SCALES:
         observed = grid.dataset[f"{observed_prefix}{scale}"].values
@@ -81,10 +57,7 @@ def spatial_metrics(
         if not valid.any():
             raise ValueError(f"No finite spatial pairs for {scale}")
         error = predicted[valid] - observed[valid]
-        obs_event, pred_event = (
-            observed[valid] <= threshold,
-            predicted[valid] <= threshold,
-        )
+        obs_event, pred_event = (observed[valid] <= threshold,predicted[valid] <= threshold,)
         tp = int(np.sum(obs_event & pred_event))
         fp = int(np.sum(~obs_event & pred_event))
         fn = int(np.sum(obs_event & ~pred_event))
@@ -99,3 +72,16 @@ def spatial_metrics(
             "threshold": threshold,
         }
     return out
+
+def filter_sites_by_state_and_region(
+    df: pd.DataFrame, include_regions: list[str] | None = None
+) -> pd.DataFrame:
+    lat_min,lat_max=15.6,22.1
+    lon_min,lon_max=72.6,80.9
+    mask=((df["lat"]>=lat_min)&(df["lat"]<=lat_max)&(df["lon"]>=lon_min)&(df["lon"]<=lon_max))
+    filtered_df=df.loc[mask].copy()
+
+    if include_regions is not None and "region" in filtered_df.columns:
+        filtered_df=filtered_df[filtered_df["region"].isin(include_regions)].copy()
+
+    return filtered_df
