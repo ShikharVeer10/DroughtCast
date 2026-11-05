@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import argparse
 import json
 import subprocess
@@ -10,6 +11,7 @@ import yaml
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/config.yaml")
     parser.add_argument(
         "--seeds", nargs="+", type=int, default=[42, 101, 2024, 2025, 2026]
     )
@@ -17,7 +19,7 @@ def main():
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    config = yaml.safe_load(Path("configs/config.yaml").read_text(encoding="utf-8"))
+    config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     sites_data = config.get("sites", [])
     if isinstance(sites_data, dict):
         site_iter = sites_data.values()
@@ -28,13 +30,14 @@ def main():
         {site["region"] for site in site_iter if "region" in site}
     )
 
-    root = Path("results/region_holdouts")
+    root = Path("results/maharashtra/region_holdouts")
     root.mkdir(parents=True, exist_ok=True)
     (root / "manifest.json").write_text(
         json.dumps(
             {
                 "seeds": args.seeds,
                 "regions": regions,
+                "dataset_path": config["data"]["path"],
                 "protocol": "leave-region-out; train/validation on source regions only; zero-shot heldout region test only",
             },
             indent=2,
@@ -58,6 +61,8 @@ def main():
                 [
                     sys.executable,
                     "train.py",
+                    "--config",
+                    args.config,
                     "--seed",
                     str(seed),
                     "--checkpoint",
@@ -71,6 +76,8 @@ def main():
                 [
                     sys.executable,
                     "evaluate.py",
+                    "--config",
+                    args.config,
                     "--seed",
                     str(seed),
                     "--checkpoint",

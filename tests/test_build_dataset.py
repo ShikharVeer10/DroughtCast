@@ -1,6 +1,6 @@
 import numpy as np
 
-from data.build_dataset import _nonparametric_z_scores
+from data.build_dataset import _nonparametric_z_scores, _normalize_sites, SITES
 
 
 def test_nonparametric_extreme_tails_are_finite_and_clipped():
@@ -27,3 +27,25 @@ def test_nonparametric_nan_calibration_returns_all_nan():
         np.array([-1, 0, 1]), np.array([-2, np.nan, 2])
     )
     assert np.isnan(result).all()
+
+
+def test_normalize_sites_dict():
+    sample = {"site1": {"lat": 10.0, "lon": 20.0, "region": "r1"}}
+    assert _normalize_sites(sample) == sample
+
+
+def test_normalize_sites_list_of_dicts():
+    raw_list = [
+        {"id": "aurangabad", "name": "Aurangabad", "region": "Marathwada", "lat": 19.8762, "lon": 75.3433},
+        {"id": "latur", "name": "Latur", "region": "Marathwada", "lat": 18.4088, "lon": 76.5604},
+    ]
+    normalized = _normalize_sites(raw_list)
+    assert "aurangabad" in normalized
+    assert "latur" in normalized
+    assert normalized["aurangabad"]["lat"] == 19.8762
+    assert normalized["aurangabad"]["region"] == "Marathwada"
+
+
+def test_normalize_sites_empty_or_none():
+    assert _normalize_sites(None) == SITES
+    assert _normalize_sites([]) == SITES

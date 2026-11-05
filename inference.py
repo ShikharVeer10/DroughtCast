@@ -148,7 +148,7 @@ def main():
     )
     parser.add_argument(
         "--checkpoint",
-        default="results/ablations/quantile_cqr/model_seed_42.pt",
+        default="results/maharashtra/ablations/quantile_cqr/model_seed_42.pt",
         help="Dataset-matched quantile-model checkpoint",
     )
     parser.add_argument(
@@ -166,7 +166,7 @@ def main():
     )
     parser.add_argument(
         "--output-csv",
-        default="results/inference_probabilities_seed_42.csv",
+        default="results/maharashtra/inference_probabilities_seed_42.csv",
         help="Write the exact forecasts shown in the terminal to this CSV",
     )
     parser.add_argument(
@@ -185,7 +185,7 @@ def main():
     chk_path = Path(args.checkpoint)
     if not chk_path.exists():
         raise FileNotFoundError(
-            f"Checkpoint not found: {chk_path}. Train a model with `python train.py --config configs/base_diagram.yaml`."
+            f"Checkpoint not found: {chk_path}. Train the Maharashtra quantile model with `python experiments/run_ablations.py --variants quantile_cqr --seeds 42`."
         )
     predictor = DroughtCastPredictor(chk_path, config_path=args.config, device=args.device)
     cfg = predictor.cfg
@@ -198,10 +198,12 @@ def main():
     if quantiles != [0.1, 0.5, 0.9]:
         raise ValueError(
             "Calibrated event probabilities require the q10/q50/q90 checkpoint. "
-            "Use results/ablations/quantile_cqr/model_seed_42.pt."
+            "Use results/maharashtra/ablations/quantile_cqr/model_seed_42.pt."
         )
     training_data_path = Path(cfg["data"]["path"])
-    validate_dataset_protocol()
+    validate_dataset_protocol(
+        training_data_path.parent / "dataset_metadata.json"
+    )
     checkpoint = torch.load(chk_path, map_location="cpu", weights_only=False)
     checkpoint_meta = checkpoint.get("artifact_metadata", {})
     training_hash = hashlib.sha256(training_data_path.read_bytes()).hexdigest()

@@ -1,11 +1,12 @@
 """Summarize multi-seed evaluations with Mean +/- Standard Deviation and significance metrics."""
 
+import argparse
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from data.loader import validate_dataset_protocol
 
@@ -14,8 +15,17 @@ LEADS = ["T+1", "T+2", "T+3", "T+4"]
 
 
 def main():
-    seeds = sys.argv[1:] if len(sys.argv) > 1 else ["42", "101", "2024", "2025", "2026"]
-    results_dir = Path("results/seeds")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", default="configs/config.yaml")
+    parser.add_argument("--results-dir", default="results/maharashtra/seeds")
+    parser.add_argument(
+        "--seeds", nargs="+", default=["42", "101", "2024", "2025", "2026"]
+    )
+    args = parser.parse_args()
+    seeds = args.seeds
+    config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    dataset_path = Path(config["data"]["path"])
+    results_dir = Path(args.results_dir)
     reports = []
     for s in seeds:
         p = results_dir / f"metrics_seed_{s}.json"
@@ -28,7 +38,9 @@ def main():
         print("No seed reports found.")
         return
 
-    dataset_protocol = validate_dataset_protocol()
+    dataset_protocol = validate_dataset_protocol(
+        dataset_path.parent / "dataset_metadata.json"
+    )
     expected_protocol = {
         "schema_version": dataset_protocol["schema_version"],
         "index_alignment": dataset_protocol["index_alignment"],
@@ -84,7 +96,7 @@ def main():
                     records.append(row)
 
     df = pd.DataFrame(records)
-    out_dir = Path("results")
+    out_dir = results_dir.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "per_seed.csv", index=False)
 
@@ -118,7 +130,7 @@ def main():
 
     summary_df = pd.DataFrame(summary_rows)
     summary_df.to_csv(out_dir / "summary.csv", index=False)
-    (Path("results") / "run_manifest.json").write_text(
+    (out_dir / "run_manifest.json").write_text(
         json.dumps(
             {
                 "protocol_version": 1,

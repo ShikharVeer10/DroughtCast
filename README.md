@@ -23,6 +23,18 @@ Chronological windows retain the train period through 2010-12, validation 2012-0
 
 Training and evaluation require dataset metadata schema version 3. Rebuild older local datasets before running either command. Paper figures also require a current run manifest so stale metrics are not plotted as current evidence.
 
+## Maharashtra-only dataset
+
+The default `configs/config.yaml` names 12 Maharashtra sites and filters training and evaluation to those sites. Build a separate dataset in `data/maharashtra/`; this leaves the global benchmark CSV untouched:
+
+```powershell
+python -m data.build_dataset --config configs/config.yaml --start 1981 --end 2024
+python train.py --config configs/config.yaml
+python evaluate.py --config configs/config.yaml --checkpoint checkpoints/maharashtra/current_model.pt
+```
+
+The builder uses NASA POWER climate fields and NOAA teleconnection indices, then computes SPEI targets. Its configured model inputs do not include NDVI, VCI, or soil-moisture measurements. Rebuilding requires network access to NASA POWER and NOAA. Maharashtra ablations and regional holdouts use separate output directories under `results/maharashtra/`.
+
 ```powershell
 python -m data.build_dataset --start 1981 --end 2024
 python train.py --config configs/base_diagram.yaml
@@ -31,13 +43,14 @@ python evaluate.py --config configs/base_diagram.yaml
 
 ## Generate a new site forecast
 
-Run inference from the project root to print calibrated probabilities for every configured site, or replace `all` with a single site name from `configs/config.yaml`:
+Train the Maharashtra q10/q50/q90 model once, then run inference for every configured Maharashtra site (or replace `all` with one site ID from `configs/config.yaml`):
 
   ```powershell
+  python experiments/run_ablations.py --variants quantile_cqr --seeds 42
   python inference.py --site all
   ```
 
-The command loads the current dataset-matched q10/q50/q90 checkpoint at `results/ablations/quantile_cqr/model_seed_42.pt`, reads the latest six real monthly rows for each configured site from `data/monthly_sites.csv`, applies each site's saved train-only normalizer, and fits a separate Platt-scaling calibrator (logistic regression on a piecewise-normal z-score of q10/q50/q90) for each accumulation scale and lead using validation data. The terminal tables print q10/q50/q90 forecasts and the calibrated probability that SPEI is at or below -1.0. The same rows are saved to `results/inference_probabilities_seed_42.csv`; pass `--output-csv PATH` to choose another destination. SPEI-3/6/12 are accumulation scales; T+1..T+4 are forecast leads.
+The command loads the checkpoint at `results/maharashtra/ablations/quantile_cqr/model_seed_42.pt`, reads the latest six monthly rows for each configured site from `data/maharashtra/monthly_sites.csv`, applies its saved train-only normalizer, and calibrates probabilities on validation data. Forecasts are saved to `results/maharashtra/inference_probabilities_seed_42.csv`; pass `--output-csv PATH` to choose another destination. SPEI-3/6/12 are accumulation scales; T+1..T+4 are forecast leads.
 
 Export a compact research-paper table (one row per configured site and SPEI accumulation scale, with separate columns for T+1..T+4) from those exact inference results:
 
@@ -74,7 +87,7 @@ Use `--drought-threshold -1.5` to obtain a probability for the severe-drought th
 To generate chronological test-period calibration diagnostics and per-case calibrated probabilities for the research paper, run:
 
 ```powershell
-python -m experiments.evaluate_event_calibration --config results/ablations/quantile_cqr/config.yaml --checkpoint results/ablations/quantile_cqr/model_seed_42.pt --output results/probability_calibration/calibration_seed_42.json --predictions-output results/probability_calibration/predictions_seed_42.csv --threshold -1.0
+python -m experiments.evaluate_event_calibration --config results/maharashtra/ablations/quantile_cqr/config.yaml --checkpoint results/maharashtra/ablations/quantile_cqr/model_seed_42.pt --output results/maharashtra/probability_calibration/calibration_seed_42.json --predictions-output results/maharashtra/probability_calibration/predictions_seed_42.csv --threshold -1.0
 ```
 
 To compare computed SPEI against local SPEIbase NetCDF files while building, pass `--speibase PATH`; the per-site and per-scale validation table is written to `results/speibase_validation.csv`.

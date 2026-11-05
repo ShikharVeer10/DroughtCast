@@ -30,7 +30,7 @@ QUANTILES = [0.1, 0.5, 0.9]
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config", default="results/ablations/quantile_cqr/config.yaml"
+        "--config", default="results/maharashtra/ablations/quantile_cqr/config.yaml"
     )
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--output", required=True)
@@ -38,8 +38,10 @@ def main() -> None:
     parser.add_argument("--threshold", type=float, default=-1.0)
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    protocol = validate_dataset_protocol()
     dataset_path = Path(cfg["data"]["path"])
+    protocol = validate_dataset_protocol(
+        dataset_path.parent / "dataset_metadata.json"
+    )
     dataset_hash = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     data = load_site_table(
         cfg["data"]["path"],

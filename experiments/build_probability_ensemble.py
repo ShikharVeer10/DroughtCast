@@ -25,9 +25,9 @@ def aggregate_seed_probabilities(frames: list[pd.DataFrame]) -> pd.DataFrame:
 
 
 def main() -> None:
-    checkpoint_dir = Path("results/ablations/quantile_cqr")
+    checkpoint_dir = Path("results/maharashtra/ablations/quantile_cqr")
     checkpoints = sorted(checkpoint_dir.rglob("model_seed_*.pt"))
-    data_path = Path("data/monthly_sites.csv")
+    data_path = Path("data/maharashtra/monthly_sites.csv")
     data_hash = hashlib.sha256(data_path.read_bytes()).hexdigest()
     compatible = []
     seen_seeds = set()
@@ -47,9 +47,9 @@ def main() -> None:
                 stale_seeds.append(seed)
         for seed in stale_seeds:
             destination = checkpoint_dir / "current_dataset" / f"model_seed_{seed}.pt"
-            print(f".\\.venv\\Scripts\\python.exe train.py --config results\\ablations\\quantile_cqr\\config.yaml --seed {seed} --checkpoint {destination}")
+            print(f".\\.venv\\Scripts\\python.exe train.py --config results\\maharashtra\\ablations\\quantile_cqr\\config.yaml --seed {seed} --checkpoint {destination}")
         raise SystemExit(1)
-    run_dir = Path("results/probability_seed_runs")
+    run_dir = Path("results/maharashtra/probability_seed_runs")
     run_dir.mkdir(parents=True, exist_ok=True)
     frames = []
     for checkpoint in compatible:
@@ -64,7 +64,7 @@ def main() -> None:
         frames.append(frame)
     result = aggregate_seed_probabilities(frames)
     result["calibration"] = "validation-only Platt scaling"
-    output = Path("results/inference_probabilities_ensemble.csv")
+    output = Path("results/maharashtra/inference_probabilities_ensemble.csv")
     output.parent.mkdir(parents=True, exist_ok=True)
     result.to_csv(output, index=False)
     print(f"Checkpoints: {len(checkpoints)} ({', '.join(path.stem for path in checkpoints)})")

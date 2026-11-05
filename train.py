@@ -175,7 +175,7 @@ def main():
         raise FileNotFoundError(
             f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first."
         )
-    validate_dataset_protocol()
+    validate_dataset_protocol(Path(cfg["data"]["path"]).parent / "dataset_metadata.json")
     data = load_site_table(
         cfg["data"]["path"],
         cfg["data"].get("features"),

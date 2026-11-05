@@ -1,5 +1,3 @@
-"""Per-scale forecast heads. Each head maps shared context c in R^H to T+1..T+L leads."""
-
 from __future__ import annotations
 
 import torch
@@ -7,8 +5,6 @@ from torch import nn
 
 
 class ForecastDecoder(nn.Module):
-    """Direct MLP head: c -> forecast_steps leads."""
-
     def __init__(
         self,
         context_dim: int = 32,
@@ -29,8 +25,6 @@ class ForecastDecoder(nn.Module):
 
 
 class CascadedHydrologicalDecoder(nn.Module):
-    """Optional ablation: SPEI-3 -> SPEI-6 -> SPEI-12 cascaded conditioning."""
-
     def __init__(
         self,
         context_dim: int = 32,

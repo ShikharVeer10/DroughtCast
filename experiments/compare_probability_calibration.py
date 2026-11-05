@@ -43,19 +43,22 @@ def fit_models(x: np.ndarray, y: np.ndarray) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--config", default="results/ablations/quantile_cqr/config.yaml"
+        "--config", default="results/maharashtra/ablations/quantile_cqr/config.yaml"
     )
     parser.add_argument(
-        "--checkpoint", default="results/ablations/quantile_cqr/model_seed_42.pt"
+        "--checkpoint", default="results/maharashtra/ablations/quantile_cqr/model_seed_42.pt"
     )
     parser.add_argument("--threshold", type=float, default=-1.0)
     parser.add_argument(
         "--output",
-        default="results/probability_calibration/calibration_comparison_seed_42.csv",
+        default="results/maharashtra/probability_calibration/calibration_comparison_seed_42.csv",
     )
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    protocol = validate_dataset_protocol()
+    dataset_path = Path(cfg["data"]["path"])
+    protocol = validate_dataset_protocol(
+        dataset_path.parent / "dataset_metadata.json"
+    )
     data = load_site_table(
         cfg["data"]["path"],
         cfg["data"]["features"],

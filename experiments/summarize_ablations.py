@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import t as student_t
 
+from data.protocol import DATASET_PROTOCOL_VERSION
+
 SCALES = ["spei_3", "spei_6", "spei_12"]
 
 
@@ -87,7 +89,8 @@ def _current_report(report_path: Path, checkpoint_path: Path, data_hash: str):
     report = json.loads(report_path.read_text(encoding="utf-8"))
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     if (
-        report.get("dataset_protocol", {}).get("schema_version") != 2
+        report.get("dataset_protocol", {}).get("schema_version")
+        != DATASET_PROTOCOL_VERSION
         or checkpoint.get("artifact_metadata", {}).get("dataset_sha256") != data_hash
     ):
         raise ValueError(f"Refusing stale/non-schema-v2 result: {report_path}")
@@ -108,7 +111,9 @@ def _mean_ci(values):
 
 
 def _write_ablation_forest(root_dir: Path):
-    data_hash = hashlib.sha256(Path("data/monthly_sites.csv").read_bytes()).hexdigest()
+    manifest = json.loads((root_dir / "manifest.json").read_text(encoding="utf-8"))
+    dataset_path = Path(manifest.get("dataset_path", "data/monthly_sites.csv"))
+    data_hash = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     base_dir = root_dir / "full_model"
     base_paths = sorted(base_dir.glob("metrics_seed_*.json"))
     if len(base_paths) < 5:
@@ -205,7 +210,14 @@ def _write_ablation_forest(root_dir: Path):
 
 
 def _write_leave_region_out(root_dir: Path):
-    data_hash = hashlib.sha256(Path("data/monthly_sites.csv").read_bytes()).hexdigest()
+    manifest_path = root_dir / "manifest.json"
+    manifest = (
+        json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest_path.is_file()
+        else {}
+    )
+    dataset_path = Path(manifest.get("dataset_path", "data/monthly_sites.csv"))
+    data_hash = hashlib.sha256(dataset_path.read_bytes()).hexdigest()
     rows = []
     for folder in sorted(path for path in root_dir.iterdir() if path.is_dir()):
         for report_path in sorted(folder.glob("metrics_seed_*.json")):

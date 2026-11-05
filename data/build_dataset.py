@@ -456,7 +456,10 @@ def ingest_speibase(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/config.yaml")
-    parser.add_argument("--output", default="data/monthly_sites.csv")
+    parser.add_argument(
+        "--output",
+        help="Output CSV; defaults to data.path from the selected config",
+    )
     parser.add_argument("--cache", default="data/raw")
     parser.add_argument("--start", type=int, default=1981)
     parser.add_argument("--end", type=int, default=2024)
@@ -484,6 +487,14 @@ def main() -> None:
 
         cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     sites = cfg.get("sites", SITES)
+    # Normalize both supported config formats before building site frames.
+    if isinstance(sites, list):
+        sites_iter = {
+            s.get("id", s.get("name", "").lower().replace(" ", "_")): s
+            for s in sites
+        }.items()
+    else:
+        sites_iter = sites.items()
     indices = fetch_indices(f"{args.start}-01", f"{args.end}-12", Path(args.cache))
     data = pd.concat(
         [
@@ -496,7 +507,7 @@ def main() -> None:
                 args.spei_method,
                 indices,
             )
-            for name, spec in sites.items()
+            for name, spec in sites_iter
         ],
         ignore_index=True,
     )
@@ -531,7 +542,7 @@ def main() -> None:
             Path("results/speibase_validation_points.csv"), index=False
         )
         data = ingest_speibase(data, args.speibase, sites, args.speibase_variable)
-    output = Path(args.output)
+    output = Path(args.output or cfg.get("data", {}).get("path", "data/monthly_sites.csv"))
     output.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(output, index=False)
     quality = target_quality_report(data)

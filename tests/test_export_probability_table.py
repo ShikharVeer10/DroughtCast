@@ -28,7 +28,7 @@ def test_assert_current_accepts_newer_validation_only_platt_csv(tmp_path, monkey
         Path,
         "rglob",
         lambda self, pattern: iter([checkpoint])
-        if str(self) == "results/ablations/quantile_cqr"
+        if str(self) == "results/maharashtra/ablations/quantile_cqr"
         else iter(()),
     )
 

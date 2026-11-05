@@ -7,6 +7,8 @@ from pathlib import Path
 
 import yaml
 
+from models.config_schema import validate_config
+
 BASE_FEATURES = [
     "PRECTOTCORR",
     "T2M",
@@ -42,7 +44,7 @@ VARIANTS = {
     "without_observed_spei": {"data": {"features": BASE_FEATURES[:9]}},
     "climate_only": {"data": {"features": BASE_FEATURES[:5]}},
     "without_climate": {"data": {"features": BASE_FEATURES[5:]}},
-    "single_site_guntur": {"data": {"site_filter": ["guntur"]}},
+    "single_site_aurangabad": {"data": {"site_filter": ["aurangabad"]}},
 }
 
 
@@ -55,12 +57,43 @@ def merge(base, update):
     return base
 
 
+def load_base_config(path: Path) -> dict:
+    config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    # Keep dataset-only project metadata out of the strict training schema.
+    config.pop("study_area", None)
+    if "data" not in config or "path" not in config["data"]:
+        canonical_path = (
+            Path(__file__).resolve().parents[1] / "configs" / "base_diagram.yaml"
+        )
+        canonical = yaml.safe_load(canonical_path.read_text(encoding="utf-8")) or {}
+        config = merge(canonical, config)
+    if isinstance(config.get("sites"), list):
+        config["sites"] = {
+            site.get("id", site.get("name", "").lower().replace(" ", "_")): site
+            for site in config["sites"]
+        }
+    model = config.setdefault("model", {})
+    if model.get("attention") == "multi_horizon":
+        model["attention"] = "shared"
+    training = config.setdefault("training", {})
+    if training.get("loss") == "uncertainty_weighted":
+        training["loss"] = "mse"
+        training["task_weighting"] = "uncertainty"
+    validate_config(config)
+    return config
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        default="configs/base_diagram.yaml",
+        default="configs/config.yaml",
         help="Base training configuration",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="results/maharashtra/ablations",
+        help="Keep Maharashtra ablation artifacts separate from global benchmark runs",
     )
     parser.add_argument("--seeds", nargs="+", type=int, default=[11, 22, 33, 44, 55])
     parser.add_argument(
@@ -79,12 +112,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.probability_calibration and "quantile_cqr" not in args.variants:
         parser.error("--probability-calibration requires --variants quantile_cqr")
-    base = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    out_dir = Path("results/ablations")
+    base = load_base_config(Path(args.config))
+    out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
         "seeds": args.seeds,
         "variants": args.variants,
+        "dataset_path": base["data"]["path"],
         "primary_architecture": "shared LSTM attention; ablations only",
         "baseline_variant": "full_model",
     }
@@ -138,7 +172,7 @@ if __name__ == "__main__":
         check=True,
     )
     if args.probability_calibration:
-        calibration_dir = Path("results/probability_calibration")
+        calibration_dir = out_dir.parent / "probability_calibration"
         calibration_dir.mkdir(parents=True, exist_ok=True)
         for seed in args.seeds:
             subprocess.run(

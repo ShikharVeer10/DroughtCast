@@ -184,7 +184,9 @@ def render_terminal(table: pd.DataFrame, threshold: float) -> str:
 
 
 def _assert_current(path: Path) -> None:
-    checkpoints = list(Path("results/ablations/quantile_cqr").rglob("model_seed_*.pt"))
+    checkpoints = list(
+        Path("results/maharashtra/ablations/quantile_cqr").rglob("model_seed_*.pt")
+    )
     if checkpoints and path.stat().st_mtime < max(c.stat().st_mtime for c in checkpoints):
         raise SystemExit(f"{path} is older than the newest checkpoint; rerun inference.py")
     head = pd.read_csv(path, nrows=50)
@@ -203,9 +205,9 @@ def main() -> None:
     )
     args = parser.parse_args()
     input_path = args.input or (
-        Path("results/inference_probabilities_ensemble.csv")
-        if Path("results/inference_probabilities_ensemble.csv").is_file()
-        else Path("results/inference_probabilities_seed_42.csv")
+        Path("results/maharashtra/inference_probabilities_ensemble.csv")
+        if Path("results/maharashtra/inference_probabilities_ensemble.csv").is_file()
+        else Path("results/maharashtra/inference_probabilities_seed_42.csv")
     )
     _assert_current(input_path)
     table, months, threshold = build_table(input_path)
