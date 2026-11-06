@@ -59,7 +59,7 @@ def main() -> None:
     )
     cfg["data"]["input_dim"] = data["test"].X.shape[-1]
     state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    validate_checkpoint_metadata(state, cfg)
+    validate_checkpoint_metadata(state, cfg, dataset_path)
     checkpoint_metadata = state.get("artifact_metadata", {})
     if checkpoint_metadata.get("dataset_sha256") != dataset_hash:
         raise ValueError(

@@ -26,10 +26,8 @@ def enrich_frame(monthly: pd.DataFrame, daily: pd.DataFrame) -> pd.DataFrame:
   result["spei_3_obs"] = result["spei_3"]
   result["spei_6_obs"] = result["spei_6"]
   result["spei_12_obs"] = result["spei_12"]
-  result["oni"] = result.groupby("site", sort=False)["oni"].shift(1)
-  result["dmi"] = result.groupby("site", sort=False)["dmi"].shift(1)
-  result["nao"] = result.groupby("site", sort=False)["nao"].shift(1)
-  result["pdo"] = result.groupby("site", sort=False)["pdo"].shift(1)
+  # Inputs from build_dataset are already protocol-aligned and carry their
+  # observation month/staleness audit columns. Never apply a second shift here.
   return result.drop(columns=["T2M_MAX", "T2M_MIN"])
 
 

@@ -85,7 +85,7 @@ def main():
         raise RuntimeError("Validation partition needs at least two windows")
     cfg["data"]["input_dim"] = val.X.shape[-1]
     state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    validate_checkpoint_metadata(state, cfg)
+    validate_checkpoint_metadata(state, cfg, cfg["data"]["path"])
     model = MultiScaleForecaster(cfg)
     model.load_state_dict(state.get("model", state))
     model.eval()

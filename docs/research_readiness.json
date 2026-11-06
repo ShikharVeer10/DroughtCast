@@ -1,33 +1,40 @@
 {
-  "status": "spatial_pipeline_implemented_pending_raw_downloads",
-  "supported": [
-    "Chronological train/validation/test windows with gap periods",
-    "Train-only feature normalization",
-    "Canonical shared LSTM and temporal attention architecture",
-    "Automated architecture, pipeline, target, and artifact tests",
-    "Target quality diagnostics with per-scale and per-site summaries",
-    "Checkpoint dataset/config/architecture fingerprints",
-    "HAC Diebold-Mariano tests with effective sample size and Holm adjustment",
-    "Reproducible download and provenance manifest for SPEIbase, TerraClimate, Copernicus DEM, and GADM",
-    "Leak-free continuous spatial preprocessing with per-cell train-only normalization and strict split preservation",
-    "Continuous spatial inference architecture supporting multi-horizon (T+1..T+4) and multi-scale (SPEI-3/6/12) forecasts",
-    "Validation-only isotonic event probability calibration and split-CQR interval adjustment",
-    "Comprehensive spatial evaluation against persistence, climatology, and ridge baselines",
-    "Standardized NetCDF evidence raster conforming to data.spatial.load_spatial_grid requirements",
-    "Publication-quality multi-format (PNG, PDF, EPS) figure generation suite"
+  "status": "not_publication_ready",
+  "scope": {
+    "study_area": "Maharashtra, India",
+    "configured_sites": 12,
+    "configured_period": "1990-01 through 2026-10",
+    "inputs": "6 monthly steps",
+    "outputs": "SPEI-3, SPEI-6, SPEI-12 at T+1 through T+4; active config uses q10/q50/q90",
+    "split": {
+      "train": "through 2010-12",
+      "validation": "2013-01 through 2014-12",
+      "test": "2017-01 through 2025-12"
+    }
+  },
+  "implemented_controls": [
+    "Maharashtra-only site validation in dataset builder",
+    "Versioned temporal alignment protocol, including two-month ONI lag and bounded index carry-forward",
+    "POWER response unit checks for fresh downloads and explicit legacy-cache unit-unverified metadata",
+    "Invalid NOAA sentinels rejected",
+    "Dataset/config/checkpoint compatibility checks include hash, sites, features, split dates and architecture",
+    "Monthly-derived feature consistency for VPD and temperature range",
+    "Tests for protocol-specific index lags and reproducibility metadata"
   ],
-  "pending": [
-    "Official SPEIbase comparison for all sites and scales",
-    "Five-seed complete classical baseline study",
-    "Five-seed leave-region-out evaluation",
-    "Dependence-aware probabilistic calibration experiments",
-    "Modern Transformer/TFT baseline comparison",
-    "Failure-analysis tables and event-conditioned robustness",
-    "Full-extent global raster download of multi-gigabyte raw SPEIbase and TerraClimate archives"
-  ],
+  "existing_evidence": {
+    "speibase_reference": "SPEIbase v2.11 nearest 0.5-degree cells, 1990-01 through 2024-12",
+    "interpretation": "Calculated targets show moderate and spatially variable agreement; severe and extreme event agreement is weak for many site-scale pairs.",
+    "pet_validation": "No independent PET comparison artifact found.",
+    "forecast_probabilities": "Existing 2027 table is uncalibrated q10/q50/q90 interpolation and is not validated probability evidence.",
+    "legacy_evaluation": "Existing checkpoints/evaluations predate protocol version 6 and are incompatible with current configuration or dataset. Do not use them as current results."
+  },
   "blocking_risks": [
-    "Continuous spatial inference on real global grids requires complete multi-gigabyte raw downloads of SPEIbase (v2.10) and TerraClimate archives. Synthetic continuous data is strictly prohibited.",
-    "SPEI tail clipping must be validated against official SPEIbase or domain-approved limits",
-    "Top-tier claims require complete multi-seed and regional evidence"
+    "Legacy NASA POWER caches lack complete per-response unit/retrieval metadata; fresh source retrieval is required for full provenance.",
+    "DMI, NAO and PDO lag proxies are not verified historical publication timestamps.",
+    "Locally calculated Hargreaves-Samani PET has not been compared with an independent PET product.",
+    "Nonparametric SPEI targets and their tail behavior require sensitivity analysis against conventional fitting and SPEIbase before retraining.",
+    "Current local dataset/checkpoints/evaluation artifacts are not protocol-version-6 matched; no new model performance claim is supported.",
+    "Existing probability calibration diagnostics have low reliability limitations and must be regenerated from validation-only fitting and untouched test data.",
+    "Temporal evaluation at represented sites does not establish spatial transfer to unseen regions."
   ]
 }

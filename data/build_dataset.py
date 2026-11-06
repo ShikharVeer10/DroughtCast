@@ -30,27 +30,67 @@ NOAA = {
     "nao": "https://psl.noaa.gov/data/correlation/nao.data",
     "pdo": "https://psl.noaa.gov/data/correlation/pdo.data",
 }
-SITES = {
-    "guntur": {"lat": 15.9129, "lon": 79.74, "region": "south_asia"},
-    "jaipur": {"lat": 26.9124, "lon": 75.7873, "region": "south_asia"},
-    "nagpur": {"lat": 21.1458, "lon": 79.0882, "region": "south_asia"},
-    "murray_darling": {"lat": -34.0, "lon": 143.0, "region": "australia"},
-    "addis_ababa": {"lat": 9.03, "lon": 38.74, "region": "east_africa"},
-    "phoenix": {"lat": 33.4484, "lon": -112.074, "region": "us_southwest"},
-    "seville": {"lat": 37.3891, "lon": -5.9845, "region": "mediterranean"},
-    "pretoria": {"lat": -25.7479, "lon": 28.2293, "region": "southern_africa"},
+SITES: dict[str, dict[str, Any]] = {}
+
+ALLOWED_MAHARASHTRA_REGIONS = {
+    "marathwada", "vidarbha", "madhya_maharashtra", "konkan"
+}
+EXPECTED_MAHARASHTRA_SITES = {
+    "aurangabad", "latur", "beed", "nanded", "nagpur", "akola",
+    "amravati", "pune", "solapur", "nashik", "mumbai", "ratnagiri",
 }
 
 
+def _normalize_sites(sites: Any) -> dict[str, dict[str, Any]]:
+    """Normalize explicitly configured Maharashtra sites; never use global sites."""
+    if sites is None:
+        return {}
+    if isinstance(sites, list):
+        sites = {
+            s.get("id", s.get("name", "").lower().replace(" ", "_")): s
+            for s in sites
+        }
+    if not isinstance(sites, dict):
+        raise ValueError("Configured sites must be a mapping or list")
+    return {str(name).strip().lower(): spec for name, spec in sites.items()}
+
+
+def _validate_maharashtra_sites(sites: dict[str, dict[str, Any]]) -> None:
+    if set(sites) != EXPECTED_MAHARASHTRA_SITES:
+        raise ValueError(
+            "Configuration must contain exactly the 12 Maharashtra sites; "
+            f"missing={sorted(EXPECTED_MAHARASHTRA_SITES-set(sites))}, "
+            f"unexpected={sorted(set(sites)-EXPECTED_MAHARASHTRA_SITES)}"
+        )
+    for site, spec in sites.items():
+        region = str(spec.get("region", "")).strip().lower().replace(" ", "_")
+        if region not in ALLOWED_MAHARASHTRA_REGIONS:
+            raise ValueError(f"Invalid Maharashtra region for {site}: {spec.get('region')!r}")
+        if not np.isfinite([spec.get("lat", np.nan), spec.get("lon", np.nan)]).all():
+            raise ValueError(f"Missing finite coordinates for Maharashtra site {site}")
+
+
 def fetch_power(
-    site: str, spec: dict[str, Any], start: int, end: int, cache: Path
+    site: str, spec: dict[str, Any], start: int, end: int, cache: Path,
+    end_month: int = 12, refresh: bool = False,
 ) -> pd.DataFrame:
     cache.mkdir(parents=True, exist_ok=True)
     path = cache / f"{site}_power_{start}_{end}.csv"
-    if path.exists():
-        frame = pd.read_csv(path)
-        frame["date"] = pd.to_datetime(frame["date"])
-        return frame.set_index("date")
+    expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
+    if path.exists() and not refresh:
+        cached = pd.read_csv(path, index_col=0, parse_dates=True)
+        cached = cached.apply(pd.to_numeric, errors="coerce").replace(
+            [-999.0, -99.0, -9999.0, -32768.0], np.nan
+        )
+        if set(POWER_VARS).issubset(cached.columns) and expected.isin(cached.index).all():
+            cached = cached.loc[expected[0]:expected[-1]].reindex(expected)
+            sidecar = path.with_suffix(".metadata.json")
+            if not sidecar.exists():
+                sidecar.write_text(json.dumps({
+                    "units": {}, "unit_validation": "not verified for legacy cache",
+                    "retrieved_utc": None,
+                }, indent=2), encoding="utf-8")
+            return cached
     response = requests.get(
         POWER_URL,
         params={
@@ -76,6 +116,21 @@ def fetch_power(
         raise ValueError(
             f"NASA POWER response missing expected variables: {list(parameters)}"
         )
+    unit_table = body.get("parameters", {})
+    expected_units = {
+        "PRECTOTCORR": {"mm/day"},
+        "T2M": {"c"}, "T2MDEW": {"c"}, "T2M_MAX": {"c"}, "T2M_MIN": {"c"},
+        "WS10M": {"m/s"},
+        "ALLSKY_SFC_SW_DWN": {"mj/m^2/day", "kwh/m^2/day", "kw-hr/m^2/day"},
+    }
+    for variable, accepted in expected_units.items():
+        reported = unit_table.get(variable, {})
+        unit = str(reported.get("units", "") if isinstance(reported, dict) else reported)
+        unit = unit.lower().replace(" ", "")
+        if unit not in accepted:
+            raise ValueError(
+                f"NASA POWER {variable} unit {unit!r} is not one of {sorted(accepted)}"
+            )
     frame = pd.DataFrame(parameters)
     # Monthly POWER includes annual summaries labelled YYYY13; reject before date parsing.
     frame = frame.loc[[str(key)[-2:] != "13" for key in frame.index]]
@@ -83,9 +138,24 @@ def fetch_power(
     frame.index = pd.to_datetime(frame.index, format="%Y%m", errors="raise")
     frame.index.name = "date"
     frame = frame.sort_index()
+    frame = frame.apply(pd.to_numeric, errors="coerce").replace(
+        [-999.0, -99.0, -9999.0, -32768.0], np.nan
+    )
+    missing = expected.difference(frame.index)
+    if len(missing):
+        raise ValueError(
+            f"NASA POWER returned incomplete monthly dates for {site}: "
+            f"{missing.strftime('%Y-%m').tolist()}"
+        )
     tmp_path = path.with_suffix(".tmp")
     frame.to_csv(tmp_path, index_label="date")
     tmp_path.replace(path)
+    path.with_suffix(".metadata.json").write_text(
+        json.dumps({"units": {k: v.get("units") for k, v in unit_table.items()},
+                    "header": body.get("header", {}), "unit_validation": "passed",
+                    "retrieved_utc": pd.Timestamp.now(tz="UTC").isoformat()}, indent=2),
+        encoding="utf-8",
+    )
     return frame
 
 
@@ -126,7 +196,8 @@ def _parse_noaa_text(name: str, text: str) -> pd.Series:
             except ValueError:
                 continue
             for month, val in enumerate(values, 1):
-                if np.isfinite(val) and val > -90:
+                # NOAA PSL series use both -99.9 and -9.9 sentinels.
+                if np.isfinite(val) and val > -90 and not np.isclose(val, -9.9):
                     rows[pd.Timestamp(year, month, 1)] = val
     if not rows:
         raise ValueError(
@@ -135,12 +206,12 @@ def _parse_noaa_text(name: str, text: str) -> pd.Series:
     return pd.Series(rows, name=name).sort_index()
 
 
-def fetch_indices(start: str, end: str, cache: Path) -> pd.DataFrame:
+def fetch_indices(start: str, end: str, cache: Path, refresh: bool = False) -> pd.DataFrame:
     columns = []
     cache.mkdir(parents=True, exist_ok=True)
     for name, url in NOAA.items():
         path = cache / f"noaa_{name}.txt"
-        if path.exists():
+        if path.exists() and not refresh:
             text = path.read_text(encoding="utf-8")
         else:
             try:
@@ -279,11 +350,34 @@ def build_site(
     cache: Path,
     method: str,
     indices: pd.DataFrame,
+    end_month: int = 12,
+    daily_monthly: pd.DataFrame | None = None,
+    refresh_power: bool = False,
 ) -> pd.DataFrame:
-    frame = fetch_power(site, spec, start, end, cache)
+    frame = fetch_power(site, spec, start, end, cache, end_month, refresh_power)
     frame = frame.loc[frame.index.month != 13]
-    expected = pd.date_range(f"{start}-01-01", f"{end}-12-01", freq="MS")
+    expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
     frame = frame.reindex(expected)
+    frame = frame.replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
+    for column in ("GWETTOP", "GWETROOT"):
+        if column not in frame:
+            frame[column] = np.nan
+    if daily_monthly is not None and site in daily_monthly.index.get_level_values("site"):
+        daily_site = daily_monthly.xs(site, level="site").reindex(expected)
+        fallback_columns = [*POWER_VARS, "GWETTOP", "GWETROOT"]
+        for column in fallback_columns:
+            if column in daily_site:
+                frame[column] = frame[column].where(frame[column].notna(), daily_site[column])
+    for column in ("GWETTOP", "GWETROOT"):
+        if column not in frame:
+            frame[column] = np.nan
+    frame["T2M_RANGE"] = (frame["T2M_MAX"] - frame["T2M_MIN"]).clip(lower=0)
+    es = (
+        0.6108 * np.exp(17.27 * frame["T2M_MAX"] / (frame["T2M_MAX"] + 237.3))
+        + 0.6108 * np.exp(17.27 * frame["T2M_MIN"] / (frame["T2M_MIN"] + 237.3))
+    ) / 2
+    ea = 0.6108 * np.exp(17.27 * frame["T2MDEW"] / (frame["T2MDEW"] + 237.3))
+    frame["VPD"] = (es - ea).clip(lower=0)
     frame.index.name = "date"
     frame["pet_mm"] = estimate_pet_hargreaves(frame, spec["lat"])
     # NASA POWER PRECTOTCORR is mm/day; convert to a monthly total.
@@ -295,16 +389,60 @@ def build_site(
     # Observed SPEI at the input month (unshifted) for information parity with persistence.
     for scale in (3, 6, 12):
         frame[f"spei_{scale}_obs"] = frame[f"spei_{scale}"]
-    frame = frame.join(indices, how="left")
-    # For each monthly index, attach the previous month's published value to
-    # month m. This is conservative for centered ONI (which includes m+1)
-    # and gives a single, auditable alignment rule across all indices.
+    max_stale = int(INDEX_ALIGNMENT.get("max_staleness_months", 12))
     for name in ("oni", "dmi", "nao", "pdo"):
-        if name in frame.columns:
-            frame[name] = frame[name].shift(1)
+        if name not in indices:
+            frame[name] = np.nan
+            continue
+        lag = int(INDEX_ALIGNMENT[name]["lag_months"])
+        # Track dates only where this specific index has a real observation.
+        # The NOAA series are concatenated on a shared calendar, so using the
+        # union index here falsely made missing PDO months look newly observed.
+        observed = indices[name].dropna()
+        source_values = observed.reindex(frame.index).shift(lag)
+        source_dates = pd.Series(observed.index, index=observed.index).reindex(frame.index).shift(lag)
+        source_values = source_values.ffill()
+        source_dates = source_dates.ffill()
+        age = (frame.index.year - pd.DatetimeIndex(source_dates).year) * 12 + (
+            frame.index.month - pd.DatetimeIndex(source_dates).month
+        )
+        stale = pd.isna(source_dates.to_numpy()) | (age > max_stale)
+        frame[name] = source_values.where(~stale)
+        frame[f"{name}_source_month"] = pd.DatetimeIndex(source_dates).strftime("%Y-%m")
+        frame.loc[stale, f"{name}_source_month"] = None
+        frame[f"{name}_staleness_months"] = np.where(stale, np.nan, age)
     frame["site"] = site
     frame["region"] = spec["region"]
     return frame.reset_index()
+
+
+def load_daily_monthly(path: Path, end_year: int, end_month: int) -> pd.DataFrame | None:
+    """Aggregate only complete daily months for use as a POWER monthly fallback."""
+    if not path.is_file():
+        return None
+    daily = pd.read_csv(path)
+    if not {"date", "site", "PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "T2M_MAX", "T2M_MIN", "ALLSKY_SFC_SW_DWN", "GWETTOP", "GWETROOT"}.issubset(daily.columns):
+        raise ValueError(f"Daily NASA POWER source {path} lacks required fields")
+    daily["date"] = pd.to_datetime(daily["date"], errors="raise")
+    daily["site"] = daily["site"].astype(str).str.strip().str.lower()
+    numeric = ["PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "T2M_MAX", "T2M_MIN", "ALLSKY_SFC_SW_DWN", "GWETTOP", "GWETROOT"]
+    daily[numeric] = daily[numeric].apply(pd.to_numeric, errors="coerce").replace(
+        [-999.0, -99.0, -9999.0, -32768.0], np.nan
+    )
+    daily["month"] = daily["date"].dt.to_period("M").dt.to_timestamp()
+    aggregations = daily.groupby(["site", "month"], sort=False).agg(
+        {**{column: "mean" for column in numeric}, "date": "nunique"}
+    ).rename(columns={"date": "days_observed"})
+    expected_days = aggregations.index.get_level_values("month").days_in_month
+    complete = aggregations["days_observed"].to_numpy() == expected_days
+    aggregations.loc[~complete, numeric] = np.nan
+    last_month = pd.Timestamp(end_year, end_month, 1)
+    for site, sub in aggregations.groupby(level="site"):
+        if last_month in sub.index.get_level_values("month"):
+            row = sub.xs(site, level="site").loc[last_month]
+            if int(row["days_observed"]) != last_month.days_in_month:
+                raise ValueError(f"Daily POWER data do not cover all of {last_month:%Y-%m} for {site}")
+    return aggregations
 
 
 def _resolve_data_variable(
@@ -430,8 +568,11 @@ def main() -> None:
         help="Output CSV; defaults to data.path from the selected config",
     )
     parser.add_argument("--cache", default="data/raw")
-    parser.add_argument("--start", type=int, default=1981)
-    parser.add_argument("--end", type=int, default=2024)
+    parser.add_argument("--start", type=int)
+    parser.add_argument("--end", type=int)
+    parser.add_argument("--end-month", type=int)
+    parser.add_argument("--refresh-indices", action="store_true")
+    parser.add_argument("--refresh-power", action="store_true")
     parser.add_argument(
         "--spei-method",
         choices=("nonparametric", "log-logistic"),
@@ -455,31 +596,44 @@ def main() -> None:
         import yaml
 
         cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    sites = cfg.get("sites", SITES)
-    # Normalize both supported config formats before building site frames.
-    if isinstance(sites, list):
-        sites_iter = {
-            s.get("id", s.get("name", "").lower().replace(" ", "_")): s
-            for s in sites
-        }.items()
-    else:
-        sites_iter = sites.items()
-    indices = fetch_indices(f"{args.start}-01", f"{args.end}-12", Path(args.cache))
+    sites = _normalize_sites(cfg.get("sites"))
+    _validate_maharashtra_sites(sites)
+    data_cfg = cfg.get("data", {})
+    start = args.start if args.start is not None else int(data_cfg.get("start_year", 1981))
+    end = args.end if args.end is not None else int(data_cfg.get("end_year", 2024))
+    end_month = args.end_month if args.end_month is not None else int(data_cfg.get("end_month", 12))
+    if end < start or not 1 <= end_month <= 12:
+        raise ValueError("Invalid period: end_year must follow start_year and end_month must be 1..12")
+    cache = Path(args.cache)
+    indices = fetch_indices(f"{start}-01", f"{end}-{end_month:02d}", cache, args.refresh_indices)
+    daily_monthly = load_daily_monthly(Path("data/maharashtra_daily_raw.csv"), end, end_month)
     data = pd.concat(
         [
             build_site(
                 name,
                 spec,
-                args.start,
-                args.end,
-                Path(args.cache),
+                start,
+                end,
+                cache,
                 args.spei_method,
                 indices,
+                end_month,
+                daily_monthly,
+                args.refresh_power,
             )
-            for name, spec in sites_iter
+            for name, spec in sites.items()
         ],
         ignore_index=True,
     )
+    configured_features = list(data_cfg.get("features", []))
+    missing_features = set(configured_features).difference(data.columns)
+    if missing_features:
+        raise ValueError(f"Built dataset lacks configured features: {sorted(missing_features)}")
+    expected_dates = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
+    for site, group in data.groupby("site"):
+        actual = pd.DatetimeIndex(pd.to_datetime(group["date"]).sort_values())
+        if not actual.equals(expected_dates):
+            raise ValueError(f"Monthly coverage is incomplete for {site}")
     if args.speibase:
         from data.validate_speibase import compare_netcdf, speibase_points
 
@@ -523,18 +677,25 @@ def main() -> None:
         json.dumps(
             {
                 "schema_version": DATASET_PROTOCOL_VERSION,
-                "source": "NASA POWER monthly point; NOAA PSL teleconnection indices",
-                "period": [args.start, args.end],
+                "source": "NASA POWER monthly point with daily-derived fallback for complete months; NOAA CPC/PSL teleconnection indices",
+                "period": [start, end],
+                "latest_complete_month": f"{end}-{end_month:02d}",
                 "spei_method": args.spei_method,
-                "spei_calibration_period": [args.start, "2010-12-01"],
+                "spei_calibration_period": [start, "2010-12-01"],
                 "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
                 "sites": sites,
-                "climate_variables": POWER_VARS,
+                "climate_variables": POWER_VARS + ["GWETTOP", "GWETROOT"],
                 "teleconnection_indices": list(NOAA),
-                "model_features": POWER_VARS[:5]
-                + list(NOAA)
-                + ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
+                "model_features": configured_features,
                 "index_alignment": INDEX_ALIGNMENT,
+                "index_last_source_month": {name: str(indices[name].dropna().index.max().date()) if name in indices and indices[name].notna().any() else None for name in NOAA},
+                "index_max_staleness_months": INDEX_ALIGNMENT.get("max_staleness_months", 12),
+                "input_units": {
+                    "PRECTOTCORR": "mm/day, converted to monthly total by multiplying calendar days",
+                    "temperature": "degC", "WS10M": "m/s",
+                    "ALLSKY_SFC_SW_DWN": "verified from NASA POWER response metadata; raw cache sidecar stores units",
+                },
+                "source_retrieved_utc": pd.Timestamp.now(tz="UTC").isoformat(),
                 "speibase": str(args.speibase) if args.speibase else None,
                 "target_quality_report": str(output.parent / "target_quality.json"),
             },

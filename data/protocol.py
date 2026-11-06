@@ -1,14 +1,15 @@
 """Versioned rules for information available to monthly forecasts."""
 
-DATASET_PROTOCOL_VERSION = 5
+DATASET_PROTOCOL_VERSION = 6
 
 # Forecast inputs end at month m; target months begin at m+1.
 # ONI is a centered three-month season; its month label is the center month,
 # so two months are removed. The monthly PSL indices use a one-month lag as a
-# conservative publication-delay proxy. Missing late releases are carried
-# forward from the latest already-published value (never backward-filled).
+# conservative publication-delay proxy. Exact historical publication timestamps
+# are not available in these source tables; carries are bounded to 12 months.
 INDEX_ALIGNMENT = {
-    "forecast_issue": "month-end of input month; target starts next month; lagged indices forward-filled from latest prior release",
+    "forecast_issue": "month-end of input month; target starts next month",
+    "max_staleness_months": 12,
     "oni": {"source": "NOAA CPC centered 3-month season", "lag_months": 2},
     "dmi": {"source": "NOAA PSL monthly", "lag_months": 1},
     "nao": {"source": "NOAA PSL monthly", "lag_months": 1},

@@ -42,7 +42,10 @@ def architecture_fingerprint(config: dict) -> str:
     data = config.get("data", {})
     fields = {
         "input_dim": data.get("input_dim"),
+        "features": list(data.get("features") or []),
+        "seq_len": data.get("seq_len"),
         "forecast_steps": data.get("forecast_steps"),
+        "target_scales": list(data.get("target_scales") or ["spei_3", "spei_6", "spei_12"]),
         "encoder": model.get("encoder", "lstm"),
         "hidden_dim_1": model.get("hidden_dim_1", 64),
         "hidden_dim_2": model.get("hidden_dim_2", 32),
@@ -51,6 +54,8 @@ def architecture_fingerprint(config: dict) -> str:
         "quantiles": model.get("quantiles"),
         "static_context": model.get("static_context", False),
         "use_cascaded_decoder": model.get("use_cascaded_decoder", False),
+        "use_attention": model.get("use_attention", True),
+        "use_variable_gate": model.get("use_variable_gate", False),
     }
     return config_hash(fields)
 
@@ -73,10 +78,16 @@ def artifact_metadata(
         "features": list(config.get("data", {}).get("features") or []),
         "forecast_steps": config.get("data", {}).get("forecast_steps"),
         "seq_len": config.get("data", {}).get("seq_len"),
+        "sites": sorted((config.get("sites") or {}).keys()),
+        "split_boundaries": dict(config.get("data", {}).get("split_boundaries") or {}),
+        "target_scales": list(config.get("data", {}).get("target_scales") or ["spei_3", "spei_6", "spei_12"]),
+        "quantiles": list(config.get("model", {}).get("quantiles") or []),
     }
 
 
-def validate_checkpoint_metadata(checkpoint: dict, config: dict) -> None:
+def validate_checkpoint_metadata(
+    checkpoint: dict, config: dict, dataset_path: str | Path | None = None
+) -> None:
     if "artifact_metadata" not in checkpoint:
         raise ValueError(
             "Checkpoint has no reproducibility metadata and is considered legacy. "
@@ -96,3 +107,25 @@ def validate_checkpoint_metadata(checkpoint: dict, config: dict) -> None:
             "Checkpoint architecture is incompatible with the supplied config "
             f"(checkpoint={actual}, config={expected})."
         )
+    artifact = checkpoint["artifact_metadata"]
+    checks = {
+        "features": list(config.get("data", {}).get("features") or []),
+        "seq_len": config.get("data", {}).get("seq_len"),
+        "forecast_steps": config.get("data", {}).get("forecast_steps"),
+        "sites": sorted((config.get("sites") or {}).keys()),
+        "target_scales": list(config.get("data", {}).get("target_scales") or ["spei_3", "spei_6", "spei_12"]),
+        "quantiles": list(config.get("model", {}).get("quantiles") or []),
+        "split_boundaries": dict(config.get("data", {}).get("split_boundaries") or {}),
+    }
+    for key, expected_value in checks.items():
+        if artifact.get(key) != expected_value:
+            raise ValueError(
+                f"Checkpoint {key} do not match the supplied config "
+                f"(checkpoint={artifact.get(key)!r}, config={expected_value!r})."
+            )
+    if dataset_path is not None:
+        expected_hash = sha256_file(dataset_path)
+        if artifact.get("dataset_sha256") != expected_hash:
+            raise ValueError(
+                "Checkpoint dataset hash does not match the dataset supplied for evaluation/inference."
+            )

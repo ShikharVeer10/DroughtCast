@@ -89,6 +89,18 @@ def fetch_station_data(
 
   data = response.json()
   parameters_data = data["properties"]["parameter"]
+  units = data.get("parameters", {})
+  required_units = {
+      "PRECTOTCORR": {"mm/day"},
+      "T2M": {"c"}, "T2MDEW": {"c"}, "T2M_MAX": {"c"}, "T2M_MIN": {"c"},
+      "WS10M": {"m/s"},
+      "ALLSKY_SFC_SW_DWN": {"mj/m^2/day", "kwh/m^2/day", "kw-hr/m^2/day"},
+  }
+  for variable, accepted in required_units.items():
+    value = units.get(variable, {})
+    reported = str(value.get("units", "") if isinstance(value, dict) else value)
+    if reported.lower().replace(" ", "") not in accepted:
+      raise ValueError(f"NASA POWER daily {variable} unit {reported!r} was unexpected")
 
   # Convert dictionary of parameters into a clean pandas DataFrame
   df = pd.DataFrame(parameters_data)
@@ -107,11 +119,28 @@ def build_maharashtra_dataset() -> None:
   start = int(config.get("data", {}).get("start_year", 1990))
   end = int(config.get("data", {}).get("end_year", 2025))
   end_month = int(config.get("data", {}).get("end_month", 12))
-  all_dfs = []
+  sites = config.get("sites", {})
+  expected = {
+      "aurangabad", "latur", "beed", "nanded", "nagpur", "akola",
+      "amravati", "pune", "solapur", "nashik", "mumbai", "ratnagiri",
+  }
+  if set(sites) != expected:
+    raise ValueError("configs/config.yaml must define exactly the 12 Maharashtra sites")
+  raw_path = Path("data/maharashtra_daily_raw.csv")
+  existing = pd.read_csv(raw_path, parse_dates=["date"]) if raw_path.is_file() else pd.DataFrame()
+  all_dfs = [existing] if not existing.empty else []
 
-  for site_id, meta in MAHARASHTRA_STATIONS.items():
+  for site_id, meta in sites.items():
     last_day = pd.Timestamp(end, end_month, 1) + pd.offsets.MonthEnd(0)
-    df = fetch_station_data(meta["lat"], meta["lon"], start * 10000 + 101, int(last_day.strftime("%Y%m%d")))
+    previous = existing.loc[existing["site"].astype(str).str.lower().eq(site_id)] if not existing.empty and "site" in existing else pd.DataFrame()
+    fetch_start = max(
+        start * 10000 + 101,
+        int((pd.to_datetime(previous["date"]).max() + pd.Timedelta(days=1)).strftime("%Y%m%d"))
+        if not previous.empty else start * 10000 + 101,
+    )
+    if pd.to_datetime(str(fetch_start), format="%Y%m%d") > last_day:
+      continue
+    df = fetch_station_data(meta["lat"], meta["lon"], fetch_start, int(last_day.strftime("%Y%m%d")))
     df["site"] = site_id
     df["region"] = meta["region"]
     df["lat"] = meta["lat"]
@@ -119,10 +148,14 @@ def build_maharashtra_dataset() -> None:
     all_dfs.append(df.reset_index())
 
   combined_df = pd.concat(all_dfs, ignore_index=True)
+  if not combined_df.empty:
+    combined_df["date"] = pd.to_datetime(combined_df["date"])
+    combined_df["site"] = combined_df["site"].astype(str).str.lower().str.strip()
+    combined_df = combined_df.drop_duplicates(["site", "date"], keep="last").sort_values(["site", "date"])
 
   # Save raw daily output
   Path("data").mkdir(exist_ok=True)
-  combined_df.to_csv("data/maharashtra_daily_raw.csv", index=False)
+  combined_df.to_csv(raw_path, index=False)
   print("Successfully saved raw Maharashtra data to data/maharashtra_daily_raw.csv")
 
 

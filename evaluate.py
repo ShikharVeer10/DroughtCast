@@ -123,7 +123,7 @@ def main():
     checkpoint_state = torch.load(
         args.checkpoint, map_location="cpu", weights_only=False
     )
-    validate_checkpoint_metadata(checkpoint_state, cfg)
+    validate_checkpoint_metadata(checkpoint_state, cfg, cfg["data"]["path"])
     model.load_state_dict(checkpoint_state.get("model", checkpoint_state))
     model.eval()
     with torch.no_grad():

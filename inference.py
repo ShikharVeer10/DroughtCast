@@ -209,6 +209,7 @@ def main():
         training_data_path.parent / "dataset_metadata.json"
     )
     checkpoint = torch.load(chk_path, map_location="cpu", weights_only=False)
+    validate_checkpoint_metadata(checkpoint, cfg, training_data_path)
     checkpoint_meta = checkpoint.get("artifact_metadata", {})
     training_hash = hashlib.sha256(training_data_path.read_bytes()).hexdigest()
     if checkpoint_meta.get("dataset_sha256") != training_hash:

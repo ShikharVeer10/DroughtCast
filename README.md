@@ -1,109 +1,39 @@
-# DroughtCast
+# DroughtCast: Maharashtra monthly drought forecasting
 
-DroughtCast forecasts monthly SPEI at three **accumulation scales**: SPEI-3, SPEI-6, and SPEI-12. Every scale head predicts the same forecast horizon, T+1 through T+4.
+This repository contains a research prototype for forecasting monthly SPEI at 12 configured Maharashtra locations. It is **not currently a validated operational drought-warning system or a conference-ready result**: the locally calculated targets have only moderate agreement with SPEIbase, severe-event agreement is weak at many sites, and the older evaluation/checkpoint artifacts do not match the current data protocol.
 
-## Reference architecture
+## Canonical study configuration
 
-The canonical configuration is [`configs/base_diagram.yaml`](configs/base_diagram.yaml). Its six phases are:
+`configs/config.yaml` is the canonical configuration. It lists exactly 12 locations: Aurangabad, Latur, Beed, Nanded (Marathwada); Nagpur, Akola, Amravati (Vidarbha); Pune, Solapur, Nashik (Madhya Maharashtra); Mumbai, Ratnagiri (Konkan).
 
-1. Six monthly input steps, each with 12 climate, teleconnection, and observed SPEI features.
-2. `LSTM(64) -> Dropout(0.2) -> LSTM(32)`, returning `[B, 6, 32]`.
-3. Additive temporal attention over six steps, with weights `[B, 6, 1]` that sum to one.
-4. One shared context vector `c in R^32`.
-5. Three separate accumulation-scale decoders, each reading only `c` and producing four leads.
-6. Point forecasts with output shape `[B, 3, 4]`, trained with plain MSE.
+The active model uses 6 monthly input steps, 12 configured features, and predicts 4 leads (T+1 through T+4) for SPEI-3, SPEI-6, and SPEI-12. The configured experiment predicts q10, q50, and q90 for each scale and lead using pinball loss. These are forecast quantiles, not drought probabilities. The q10–q90 interval is nominally the central 80% forecast interval. The shared LSTM and attention implementation is documented in `models/forecaster.py` and `tests/test_architecture_conformance.py`; model outputs have one scale head per target scale. The point model in `configs/base_diagram.yaml` is a separate experiment and must use a distinct checkpoint.
 
-`MultiScaleForecaster` is the sole model implementation; `DroughtCast` is its public alias. Architecture conformance is checked in `tests/test_architecture_conformance.py`.
+The configured dataset spans January 1990 through October 2026. The chronological evaluation boundaries are train through December 2010, validation January 2013–December 2014, and test January 2017–December 2025. Gaps are excluded. A 2026 input period is not a 2026 test result; the test ends in 2025. A four-lead model produces only the next four monthly targets, not a full-year 2027 forecast.
 
-## Data and leakage controls
+## Data and scientific limitations
 
-`data/build_dataset.py` builds monthly data from NASA POWER climate fields and NOAA indices. PET uses the monthly Hargreaves-Samani approximation and mid-month day-of-year for extraterrestrial radiation. SPEI is standardized using calibration data through December 2010. Each feature month *m* uses the published ONI, DMI, NAO, and PDO values for month *m−1*. The observed state features `spei_3_obs`, `spei_6_obs`, and `spei_12_obs` use SPEI observed through the final input month, matching persistence information.
+The builder uses NASA POWER monthly climate fields, daily POWER data where complete daily aggregation is available, and NOAA CPC/PSL teleconnection series. Precipitation is treated as a daily mean rate in mm/day and multiplied by calendar days for monthly totals. PET is a monthly Hargreaves–Samani approximation from temperature fields, not FAO-56 Penman–Monteith. VPD and temperature range are derived from temperature/dewpoint and extrema. SPEI targets use fixed monthly calibration through December 2010. The index alignment protocol is versioned in `data/protocol.py`; exact historical publication timestamps for all indices are not supplied by their source tables, so the stated lags are conservative proxies, not verified release-time reconstruction.
 
-Chronological windows retain the train period through 2010-12, validation 2013-01 through 2014-12, and test from 2017-01. The intervening gaps are intentionally excluded to exceed the six-month input, four-lead target, and 12-month SPEI accumulation dependency. Feature normalization and SPEI calibration use training data only.
+`docs/source_data.md` describes the source products, units, processing, and limitations. Local SPEIbase comparison artifacts under `results/maharashtra/speibase_validation/` compare nearest 0.5-degree cells for 1990–2024. Those results show imperfect target agreement and should be treated as a target-validity warning, not proof that either target is interchangeable with the other. There is no independent PET comparison artifact currently available. Periods outside the SPEIbase record are not reference validated.
 
-Training and evaluation require dataset metadata schema version 5. Rebuild older local datasets before running either command. Paper figures also require a current run manifest so stale metrics are not plotted as current evidence.
+## Rebuild and evaluate
 
-## Maharashtra-only dataset
-
-The default `configs/config.yaml` names 12 Maharashtra sites and filters training and evaluation to those sites. Build a separate dataset in `data/maharashtra/`; this leaves the global benchmark CSV untouched:
+Run from the repository root. Rebuilding requires NASA/NOAA source access; use explicit refresh flags to replace caches. Existing results are preserved; write new analyses to a new output directory.
 
 ```powershell
-python -m data.build_dataset --config configs/config.yaml --start 1981 --end 2024
-python train.py --config configs/config.yaml
-python evaluate.py --config configs/config.yaml --checkpoint checkpoints/maharashtra/current_model.pt
+python -m data.build_dataset --config configs/config.yaml
+python train.py --config configs/config.yaml --seed 42
+python evaluate.py --config configs/config.yaml --checkpoint checkpoints/maharashtra_2026/current_model.pt
 ```
 
-The builder uses NASA POWER climate fields and NOAA teleconnection indices, then computes SPEI targets. Its configured model inputs do not include NDVI, VCI, or soil-moisture measurements. Rebuilding requires network access to NASA POWER and NOAA. Maharashtra ablations and regional holdouts use separate output directories under `results/maharashtra/`.
+Before treating these commands as a reproducible study, first confirm the builder completes its data-quality checks and that the resulting checkpoint's recorded dataset hash, protocol version, features, sites, split dates, and architecture match the dataset and configuration. The existing checkpoints were produced under earlier schemas/configurations and are expected to be rejected by current validation.
 
-```powershell
-python -m data.build_dataset --start 1981 --end 2024
-python train.py --config configs/base_diagram.yaml
-python evaluate.py --config configs/base_diagram.yaml
-```
+Run tests with `python -m pytest -q`. Data source refresh and large SPEIbase validation may require network access and substantial disk space. Current checked-in code and local result artifacts do not establish that the model beats persistence, reliable event probabilities, spatial transfer, or forecast skill on future 2027 observations.
 
-## Generate a new site forecast
+## Drought event probabilities
 
-Train the Maharashtra q10/q50/q90 model once, then run inference for every configured Maharashtra site (or replace `all` with one site ID from `configs/config.yaml`):
+For an event definition such as moderate drought (SPEI ≤ −1.0), event probability is a separate post-processing product. q10/q50/q90 are quantiles; they are not probabilities of drought. Any calibrated event-risk table must identify its SPEI scale, threshold, forecast origin, lead, calibrator, validation fit split, event counts, and checkpoint/dataset provenance. The checked-in `drought_no_drought_probabilities_2027.csv` is explicitly uncalibrated and is not a validated probability forecast.
 
-  ```powershell
-  python experiments/run_ablations.py --variants quantile_cqr --seeds 42
-  python inference.py --site all
-  ```
+## Reproducibility artifacts
 
-The command loads the checkpoint at `results/maharashtra/ablations/quantile_cqr/model_seed_42.pt`, reads the latest six monthly rows for each configured site from `data/maharashtra/monthly_sites.csv`, applies its saved train-only normalizer, and calibrates probabilities on validation data. Forecasts are saved to `results/maharashtra/inference_probabilities_seed_42.csv`; pass `--output-csv PATH` to choose another destination. SPEI-3/6/12 are accumulation scales; T+1..T+4 are forecast leads.
-
-Export a compact research-paper table (one row per configured site and SPEI accumulation scale, with separate columns for T+1..T+4) from those exact inference results:
-
-```powershell
-python experiments/export_probability_table.py
-```
-
-This prints decimal probabilities (0 to 1) in the terminal and writes `paper/latex/probability_table.tex` plus `paper/latex/probability_table.csv`. The LaTeX version is a `table*` using booktabs and includes the event definition, calibration description, and target months.
-
-Audit the probability output before reporting it:
-
-```powershell
-python experiments/audit_probability_outputs.py
-```
-
-This checks the dataset hash, duplicate site/scale/lead rows, quantile ordering, and the number of distinct raw versus calibrated probabilities. Isotonic calibration is piecewise constant, so repeated calibrated values are expected; the audit confirms whether the underlying q10/q50/q90 forecasts are distinct.
-
-Compare validation-only isotonic and logistic calibration on the untouched test period with:
-
-```powershell
-python -m experiments.compare_probability_calibration
-```
-
-Regenerate after rerunning `experiments/compare_probability_calibration.py`.
-
-The checked-in monthly observations currently end in December 2024, so the default command forecasts January through April 2025; it does not provide a live forecast for the current date. To forecast from newer observations, pass a CSV containing at least the latest six consecutive month-start rows for the site, with `date`, an optional `site` column, and every feature listed under `data.features` in the config. Values must follow the project's feature definitions, including already lag-aligned teleconnection indices and observed SPEI state features. Keep the training dataset and its saved normalizers unchanged, and pass the separate input file:
-
-```powershell
-python inference.py --site jaipur --input-csv path\to\latest_monthly_inputs.csv
-```
-
-Use `--drought-threshold -1.5` to obtain a probability for the severe-drought threshold instead. Calibration is refit on the validation split for the selected threshold. It is an empirically calibrated model probability, not a guarantee of occurrence.
-
-To generate chronological test-period calibration diagnostics and per-case calibrated probabilities for the research paper, run:
-
-```powershell
-python -m experiments.evaluate_event_calibration --config results/maharashtra/ablations/quantile_cqr/config.yaml --checkpoint results/maharashtra/ablations/quantile_cqr/model_seed_42.pt --output results/maharashtra/probability_calibration/calibration_seed_42.json --predictions-output results/maharashtra/probability_calibration/predictions_seed_42.csv --threshold -1.0
-```
-
-To compare computed SPEI against local SPEIbase NetCDF files while building, pass `--speibase PATH`; the per-site and per-scale validation table is written to `results/speibase_validation.csv`.
-
-## Reproducibility
-
-Install dependencies with `pip install -r requirements.txt`. Run `pytest -q` for the test suite. Training checkpoints are selected using unweighted validation MSE; the training log includes weighted loss and unweighted MSE.
-
-Evaluation output is written to `results/test_metrics.json`. Classical baseline failures produce a warning and the failed baseline is omitted from that run’s result table. GRU and TCN predictions average five seeds with validation early stopping. Probabilistic metrics label three-quantile CRPS as `crps_approx`.
-
-Paper figures are generated by `python make_paper_figures.py`. See [`paper/figures/README.md`](paper/figures/README.md) for figure sources and unavailable result artifacts. The generator reads only real files under `results/` and fails if a required input is absent.
-
-## Spatial evidence
-
-The separate gridded evidence workflow is configured in `configs/spatial_config.yaml` and uses `data.spatial_preprocess`, `experiments.run_spatial_pipeline`, and `experiments.plot_spatial_pipeline`. Gridded inference evaluates each valid cell independently; point-site predictions are not interpolated into rasters. SPEIbase is the target source and never enters the input features.
-
-## Interpretation
-
-Attention weights describe model behaviour and do not establish causality. Computed SPEI is not equivalent to official SPEIbase unless it has been explicitly compared against SPEIbase.
+Data protocol metadata is written alongside the dataset. New checkpoints include hashes and configuration metadata. Existing files under `results/` are preserved historical artifacts; their schema/config/dataset provenance must be checked before use. Do not combine metrics from incompatible checkpoints or datasets.

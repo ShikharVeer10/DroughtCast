@@ -74,7 +74,7 @@ def main() -> None:
     )
     cfg["data"]["input_dim"] = data["test"].X.shape[-1]
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
-    validate_checkpoint_metadata(checkpoint, cfg)
+    validate_checkpoint_metadata(checkpoint, cfg, dataset_path)
     model = MultiScaleForecaster(cfg)
     model.load_state_dict(checkpoint["model"])
     model.eval()

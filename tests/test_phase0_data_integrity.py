@@ -80,32 +80,34 @@ def test_standardize_accumulation_nonparametric_branch():
     assert abs(float(cal.mean())) < 0.25
 
 
-def test_oni_shifted_plus_one_month():
-    """Feature at month m must use ONI centered on m-1 (no look-ahead into m+1)."""
+def test_oni_uses_two_month_conservative_lag():
+    """Centered ONI is lagged two calendar months to avoid same-window leakage."""
     from data.build_dataset import _parse_noaa_text
 
-    text = "SEAS  YR   TOTAL  ANOM\nDJF  2000   0.0  1.00\nJFM  2000   0.0  2.00\nFMA  2000   0.0  3.00"
+    text = "SEAS  YR   TOTAL  ANOM\nDJF  2000   0.0  1.00\nJFM  2000   0.0  2.00\nFMA  2000   0.0  3.00\nMAM  2000   0.0  4.00\nAMJ  2000   0.0  5.00"
     series = _parse_noaa_text("oni", text)
     # DJF -> January, JFM -> February
     assert series.loc[pd.Timestamp("2000-01-01")] == pytest.approx(1.0)
-    shifted = series.shift(1)
-    # At February, use January-centered ONI (DJF = 1.0), not JFM (2.0).
-    assert shifted.loc[pd.Timestamp("2000-02-01")] == pytest.approx(1.0)
-    assert shifted.loc[pd.Timestamp("2000-03-01")] == pytest.approx(2.0)
+    shifted = series.shift(2)
+    # At March use January-centered DJF; at April use February-centered JFM.
+    assert shifted.loc[pd.Timestamp("2000-03-01")] == pytest.approx(1.0)
+    assert shifted.loc[pd.Timestamp("2000-04-01")] == pytest.approx(2.0)
 
 
 def test_centered_oni_source_for_concrete_input_month_has_no_future_month():
-    """A January input uses the prior December-centered ONI season."""
+    """A January input uses a season ending before January, not centered in January."""
     from data.build_dataset import _parse_noaa_text
 
     text = (
         "SEAS  YR   TOTAL  ANOM\n"
-        "NDJ  1999   0.0  9.00\n"
+        "OND  1999   0.0  9.00\n"
+        "NDJ  1999   0.0  8.00\n"
         "DJF  2000   0.0  1.00\n"
         "JFM  2000   0.0  2.00\n"
     )
     centered = _parse_noaa_text("oni", text)
-    aligned = centered.shift(1)
+    centered = centered.reindex(pd.date_range("1999-10-01", "2000-03-01", freq="MS"))
+    aligned = centered.shift(2)
     input_month = pd.Timestamp("2000-01-01")
     assert aligned.loc[input_month] == pytest.approx(9.0)
     assert aligned.loc[input_month] != centered.loc[input_month]
@@ -185,7 +187,7 @@ def test_window_spei_no_target_leakage(tmp_path):
             assert all(len(row) == 3 for row in meta["spei_history"])
 
 
-def test_all_monthly_indices_are_aligned_to_previous_month():
+def test_indices_follow_protocol_specific_lags():
     from data.build_dataset import build_site
 
     dates = pd.date_range("2000-01-01", periods=4, freq="MS")
@@ -221,11 +223,31 @@ def test_all_monthly_indices_are_aligned_to_previous_month():
             "nonparametric",
             indices,
         )
-    for name in ("oni", "dmi", "nao", "pdo"):
-        assert np.isnan(result.loc[0, name])
-        expected = 0.0 if name != "oni" else np.nan
-        if name == "oni":
-            assert np.isnan(result.loc[1, name])
-        else:
-            assert result.loc[1, name] == expected
-        assert result.loc[3, name] == (1.0 if name == "oni" else 2.0)
+    assert result.loc[0, ["oni", "dmi", "nao", "pdo"]].isna().all()
+    assert result.loc[1, ["oni"]].isna().all()
+    assert result.loc[2, "oni"] == pytest.approx(0.0)
+    assert result.loc[2, ["dmi", "nao", "pdo"]].eq(1.0).all()
+    assert result.loc[3, "oni"] == pytest.approx(1.0)
+    assert result.loc[3, ["dmi", "nao", "pdo"]].eq(2.0).all()
+
+
+def test_stale_index_is_not_made_current_by_shared_calendar_index():
+    from data.build_dataset import build_site
+
+    dates = pd.date_range("2000-01-01", periods=4, freq="MS")
+    frame = pd.DataFrame(
+        {name: value for name, value in {
+            "PRECTOTCORR": 1.0, "T2M": 20.0, "T2MDEW": 10.0, "WS10M": 2.0,
+            "ALLSKY_SFC_SW_DWN": 5.0, "T2M_MAX": 25.0, "T2M_MIN": 15.0,
+        }.items()}, index=dates,
+    )
+    indices = pd.DataFrame(
+        {name: np.arange(4, dtype=float) for name in ("oni", "dmi", "nao", "pdo")},
+        index=dates,
+    )
+    from unittest.mock import patch
+
+    with patch("data.build_dataset.fetch_power", return_value=frame):
+        result = build_site("x", {"lat": 10.0, "region": "test"}, 2000, 2001, None, "nonparametric", indices)
+    stale = result.loc[pd.Timestamp("2001-05-01")]
+    assert stale[["oni", "dmi", "nao", "pdo"]].isna().all()
