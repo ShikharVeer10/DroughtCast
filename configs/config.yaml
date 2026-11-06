@@ -1,48 +1,97 @@
-# Maharashtra-only DroughtCast training configuration.
-# Build this dataset with:
-# python -m data.build_dataset --config configs/config.yaml --output data/maharashtra/monthly_sites.csv
+# Maharashtra-only DroughtCast training configuration (18-feature biophysical + vegetation schema).
 experiment:
-  name: "DroughtCast Maharashtra"
+  name: maharashtra_droughtcast
   seed: 42
 
 sites:
-  aurangabad: {lat: 19.8762, lon: 75.3433, region: Marathwada}
-  latur: {lat: 18.4088, lon: 76.5604, region: Marathwada}
-  beed: {lat: 18.9891, lon: 75.7601, region: Marathwada}
-  nanded: {lat: 19.1383, lon: 77.3210, region: Marathwada}
-  nagpur: {lat: 21.1458, lon: 79.0882, region: Vidarbha}
-  akola: {lat: 20.7002, lon: 77.0082, region: Vidarbha}
-  amravati: {lat: 20.9374, lon: 77.7796, region: Vidarbha}
-  pune: {lat: 18.5204, lon: 73.8567, region: Madhya_Maharashtra}
-  solapur: {lat: 17.6599, lon: 75.9064, region: Madhya_Maharashtra}
-  nashik: {lat: 19.9975, lon: 73.7898, region: Madhya_Maharashtra}
-  mumbai: {lat: 19.0760, lon: 72.8777, region: Konkan}
-  ratnagiri: {lat: 16.9902, lon: 73.3120, region: Konkan}
+  aurangabad:
+    name: Aurangabad
+    region: Marathwada
+    lat: 19.8762
+    lon: 75.3433
+  latur:
+    name: Latur
+    region: Marathwada
+    lat: 18.4088
+    lon: 76.5604
+  beed:
+    name: Beed
+    region: Marathwada
+    lat: 18.9891
+    lon: 75.7601
+  nanded:
+    name: Nanded
+    region: Marathwada
+    lat: 19.1383
+    lon: 77.3210
+  nagpur:
+    name: Nagpur
+    region: Vidarbha
+    lat: 21.1458
+    lon: 79.0882
+  akola:
+    name: Akola
+    region: Vidarbha
+    lat: 20.7002
+    lon: 77.0082
+  amravati:
+    name: Amravati
+    region: Vidarbha
+    lat: 20.9374
+    lon: 77.7796
+  pune:
+    name: Pune
+    region: Madhya_Maharashtra
+    lat: 18.5204
+    lon: 73.8567
+  solapur:
+    name: Solapur
+    region: Madhya_Maharashtra
+    lat: 17.6599
+    lon: 75.9064
+  nashik:
+    name: Nashik
+    region: Madhya_Maharashtra
+    lat: 19.9975
+    lon: 73.7898
+  mumbai:
+    name: Mumbai
+    region: Konkan
+    lat: 19.0760
+    lon: 72.8777
+  ratnagiri:
+    name: Ratnagiri
+    region: Konkan
+    lat: 16.9902
+    lon: 73.3120
 
 data:
   path: data/maharashtra/monthly_sites.csv
-  metadata_path: data/maharashtra/meta.json
   site_filter:
-    - aurangabad
-    - latur
-    - beed
-    - nanded
-    - nagpur
     - akola
     - amravati
-    - pune
-    - solapur
-    - nashik
+    - aurangabad
+    - beed
+    - latur
     - mumbai
+    - nagpur
+    - nanded
+    - nashik
+    - pune
     - ratnagiri
-  start_year: 1981
-  end_year: 2024
+    - solapur
   features:
     - PRECTOTCORR
     - T2M
     - T2MDEW
     - WS10M
     - ALLSKY_SFC_SW_DWN
+    - GWETTOP
+    - GWETROOT
+    - VPD
+    - T2M_RANGE
+    - NDVI
+    - VCI
     - oni
     - dmi
     - nao
@@ -50,31 +99,42 @@ data:
     - spei_3_obs
     - spei_6_obs
     - spei_12_obs
-  seq_len: 6
-  forecast_steps: 4
+  target_scales:
+    - spei_3
+    - spei_6
+    - spei_12
+  lookback: 24
+  horizon: 3
+  train_Split: "1981-2010"
+  val_Split: "2011-2016"
+  test_Split: "2017-2024"
 
 model:
-  hidden_dim_1: 64
-  hidden_dim_2: 32
+  architecture: lstm
+  input_dim: 18
+  hidden_dim: 128
+  num_layers: 2
   dropout: 0.2
-  encoder: lstm
-  attention: shared
-  heads: direct
+  attention_heads: 4
+  head_specific_attention: false
+  use_attention: true
+  use_variable_gate: true
+  use_teleconnection_gate: true
   use_cascaded_decoder: true
-  variable_gate: true
-  separate_encoders: false
-  static_context: false
-  input_extras: []
-  consistency_weight: 0.0
+  quantiles:
+    - 0.1
+    - 0.5
+    - 0.9
 
 training:
+  epochs: 60
   batch_size: 32
-  epochs: 100
-  learning_rate: 0.001
+  lr: 0.001
   weight_decay: 0.0001
-  early_stopping_patience: 12
-  lr_patience: 5
-  extreme_weight: 1.0
+  patience: 12
+  grad_clip: 1.0
+  extreme_weight: 1.5
+  extreme_threshold: -1.0
   checkpoint_dir: checkpoints/maharashtra
   loss: mse
   task_weighting: uncertainty

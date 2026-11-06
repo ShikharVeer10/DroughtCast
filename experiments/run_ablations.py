@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import copy
 import json
 import subprocess
@@ -6,6 +6,10 @@ import sys
 from pathlib import Path
 
 import yaml
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from models.config_schema import validate_config
 
@@ -142,7 +146,7 @@ if __name__ == "__main__":
             subprocess.run(
                 [
                     sys.executable,
-                    "train.py",
+                    str(PROJECT_ROOT / "train.py"),
                     "--config",
                     str(config_path),
                     "--seed",
@@ -150,12 +154,13 @@ if __name__ == "__main__":
                     "--checkpoint",
                     str(checkpoint),
                 ],
+                cwd=PROJECT_ROOT,
                 check=True,
             )
             subprocess.run(
                 [
                     sys.executable,
-                    "evaluate.py",
+                    str(PROJECT_ROOT / "evaluate.py"),
                     "--config",
                     str(config_path),
                     "--seed",
@@ -165,10 +170,17 @@ if __name__ == "__main__":
                     "--output",
                     str(report),
                 ],
+                cwd=PROJECT_ROOT,
                 check=True,
             )
     subprocess.run(
-        [sys.executable, "-m", "experiments.summarize_ablations", str(out_dir)],
+        [
+            sys.executable,
+            "-m",
+            "experiments.summarize_ablations",
+            str(out_dir.resolve()),
+        ],
+        cwd=PROJECT_ROOT,
         check=True,
     )
     if args.probability_calibration:
@@ -185,10 +197,11 @@ if __name__ == "__main__":
                     "--checkpoint",
                     str(out_dir / "quantile_cqr" / f"model_seed_{seed}.pt"),
                     "--output",
-                    str(calibration_dir / f"calibration_seed_{seed}.json"),
+                    str((calibration_dir / f"calibration_seed_{seed}.json").resolve()),
                     "--predictions-output",
-                    str(calibration_dir / f"predictions_seed_{seed}.csv"),
+                    str((calibration_dir / f"predictions_seed_{seed}.csv").resolve()),
                 ],
+                cwd=PROJECT_ROOT,
                 check=True,
             )
         subprocess.run(
@@ -197,7 +210,8 @@ if __name__ == "__main__":
                 "-m",
                 "experiments.summarize_probability_calibration",
                 "--input-dir",
-                str(calibration_dir),
+                str(calibration_dir.resolve()),
             ],
+            cwd=PROJECT_ROOT,
             check=True,
         )

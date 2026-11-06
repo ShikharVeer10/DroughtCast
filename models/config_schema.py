@@ -83,9 +83,14 @@ DEAD_MODEL_KEYS = {
 def _reject_unknown(section: str, values: dict[str, Any] | None, allowed: set[str]) -> None:
     if not values:
         return
+    if not isinstance(values, dict):
+        raise TypeError(f"config section '{section}' must be a mapping")
     unknown = set(values) - allowed
     if unknown:
-        raise ValueError(f"Unknown config key(s) under '{section}': {sorted(unknown)}. "f"Allowed: {sorted(allowed)}")
+        raise ValueError(
+            f"Unknown config key(s) under '{section}': {sorted(unknown)}. "
+            f"Allowed: {sorted(allowed)}"
+        )
 
 
 def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:

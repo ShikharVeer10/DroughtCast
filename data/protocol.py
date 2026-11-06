@@ -1,4 +1,20 @@
-"""Dataset schema and alignment protocol constants."""
-
-DATASET_PROTOCOL_VERSION = 3
-INDEX_ALIGNMENT = "ONI/DMI/NAO/PDO are shifted one month: the feature at month m uses the value published for m-1; centered ONI at m-1 contains no month m or later"
+REQUIRED_SITE_COLUMNS = [
+    "PRECTOTCORR",
+    "T2M",
+    "T2MDEW",
+    "WS10M",
+    "ALLSKY_SFC_SW_DWN",
+    "GWETTOP",
+    "GWETROOT",
+    "VPD",
+    "T2M_RANGE",
+    "NDVI",
+    "VCI",
+    "oni",
+    "dmi",
+    "nao",
+    "pdo",
+    "spei_3_obs",
+    "spei_6_obs",
+    "spei_12_obs",
+]
