@@ -94,6 +94,23 @@ def test_oni_shifted_plus_one_month():
     assert shifted.loc[pd.Timestamp("2000-03-01")] == pytest.approx(2.0)
 
 
+def test_centered_oni_source_for_concrete_input_month_has_no_future_month():
+    """A January input uses the prior December-centered ONI season."""
+    from data.build_dataset import _parse_noaa_text
+
+    text = (
+        "SEAS  YR   TOTAL  ANOM\n"
+        "NDJ  1999   0.0  9.00\n"
+        "DJF  2000   0.0  1.00\n"
+        "JFM  2000   0.0  2.00\n"
+    )
+    centered = _parse_noaa_text("oni", text)
+    aligned = centered.shift(1)
+    input_month = pd.Timestamp("2000-01-01")
+    assert aligned.loc[input_month] == pytest.approx(9.0)
+    assert aligned.loc[input_month] != centered.loc[input_month]
+
+
 def test_spei_obs_feature_names_and_no_shift_parity(tmp_path):
     dates = pd.date_range("2008-01-01", "2010-12-01", freq="MS")
     rows = []
@@ -206,5 +223,9 @@ def test_all_monthly_indices_are_aligned_to_previous_month():
         )
     for name in ("oni", "dmi", "nao", "pdo"):
         assert np.isnan(result.loc[0, name])
-        assert result.loc[1, name] == 0.0
-        assert result.loc[3, name] == 2.0
+        expected = 0.0 if name != "oni" else np.nan
+        if name == "oni":
+            assert np.isnan(result.loc[1, name])
+        else:
+            assert result.loc[1, name] == expected
+        assert result.loc[3, name] == (1.0 if name == "oni" else 2.0)

@@ -5,17 +5,22 @@ experiment:
   seed: 42
 
 sites:
-  guntur: {lat: 15.9129, lon: 79.74, region: south_asia}
-  jaipur: {lat: 26.9124, lon: 75.7873, region: south_asia}
-  nagpur: {lat: 21.1458, lon: 79.0882, region: south_asia}
-  murray_darling: {lat: -34.0, lon: 143.0, region: australia}
-  addis_ababa: {lat: 9.03, lon: 38.74, region: east_africa}
-  phoenix: {lat: 33.4484, lon: -112.074, region: us_southwest}
-  seville: {lat: 37.3891, lon: -5.9845, region: mediterranean}
-  pretoria: {lat: -25.7479, lon: 28.2293, region: southern_africa}
+  aurangabad: {lat: 19.8762, lon: 75.3433, region: Marathwada}
+  latur: {lat: 18.4088, lon: 76.5604, region: Marathwada}
+  beed: {lat: 18.9891, lon: 75.7601, region: Marathwada}
+  nanded: {lat: 19.1383, lon: 77.3210, region: Marathwada}
+  nagpur: {lat: 21.1458, lon: 79.0882, region: Vidarbha}
+  akola: {lat: 20.7002, lon: 77.0082, region: Vidarbha}
+  amravati: {lat: 20.9374, lon: 77.7796, region: Vidarbha}
+  pune: {lat: 18.5204, lon: 73.8567, region: Madhya_Maharashtra}
+  solapur: {lat: 17.6599, lon: 75.9064, region: Madhya_Maharashtra}
+  nashik: {lat: 19.9975, lon: 73.7898, region: Madhya_Maharashtra}
+  mumbai: {lat: 19.0760, lon: 72.8777, region: Konkan}
+  ratnagiri: {lat: 16.9902, lon: 73.3120, region: Konkan}
 
 data:
-  path: "data/monthly_sites.csv"
+  path: "data/maharashtra/monthly_sites.csv"
+  site_filter: [akola, amravati, aurangabad, beed, latur, mumbai, nagpur, nanded, nashik, pune, ratnagiri, solapur]
   metadata_path: "data/meta.json"
   start_year: 1981
   end_year: 2024
@@ -28,8 +33,8 @@ model:
   hidden_dim_2: 32
   dropout: 0.2
   encoder: lstm
-  attention: shared          # one additive temporal attention; ablations: none | head_specific
-  heads: direct              # direct MLP heads; ablation: residual
+  attention: shared
+  heads: direct
   use_cascaded_decoder: false
   variable_gate: false
   separate_encoders: false

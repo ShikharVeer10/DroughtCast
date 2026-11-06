@@ -113,6 +113,7 @@ def main():
         cfg["model"].get("heads", cfg["model"].get("head_mode", "direct"))
         == "residual",
         cfg.get("sites"),
+        cfg["data"].get("split_boundaries"),
     )
     train, test = data["train"], data["test"]
     if not len(test):

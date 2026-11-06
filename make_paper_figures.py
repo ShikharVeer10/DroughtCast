@@ -249,7 +249,7 @@ def missing_inputs() -> dict[str, list[str]]:
                 )
                 current = (
                     manifest.get("protocol_version") == 1
-                    and manifest.get("dataset_schema_version") == 2
+                    and manifest.get("dataset_schema_version") == 5
                     and manifest.get("index_alignment") == expected_alignment
                 )
                 if (
@@ -483,7 +483,7 @@ def missing_inputs() -> dict[str, list[str]]:
         manifest = json.loads(run_manifest.read_text(encoding="utf-8"))
         current = (
             manifest.get("protocol_version") == 1
-            and manifest.get("dataset_schema_version") == 2
+            and manifest.get("dataset_schema_version") == 5
             and manifest.get("index_alignment") == expected_alignment
         )
         if current and "F3" not in missing:
@@ -503,7 +503,7 @@ def missing_inputs() -> dict[str, list[str]]:
             )
             current_evaluation = (
                 evaluation.get("protocol_version") == 1
-                and evaluation.get("dataset_schema_version") == 2
+                and evaluation.get("dataset_schema_version") == 5
                 and evaluation.get("index_alignment") == expected_alignment
             )
         except (OSError, ValueError):
@@ -1526,7 +1526,7 @@ def figure_p12_interval_coverage():
     records = []
     for path in reports:
         report = json.loads(path.read_text(encoding="utf-8"))
-        if report.get("dataset_protocol", {}).get("schema_version") != 2:
+        if report.get("dataset_protocol", {}).get("schema_version") != 5:
             raise ValueError(
                 f"P12 report is stale or lacks schema-v2 provenance: {path}"
             )
@@ -1921,7 +1921,7 @@ def figure_p1_pipeline():
     """Real-data flowchart and timeline using current dataset/config split dates."""
     from data.loader import split_for_date
 
-    metadata_path = ROOT / "data/dataset_metadata.json"
+    metadata_path = ROOT / "data/maharashtra/dataset_metadata.json"
     config_path = ROOT / "configs/base_diagram.yaml"
     if not metadata_path.is_file() or not config_path.is_file():
         missing = metadata_path if not metadata_path.is_file() else config_path
@@ -1929,8 +1929,8 @@ def figure_p1_pipeline():
             f"P1 source is missing: {missing}; build/update the dataset and config first."
         )
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if metadata.get("schema_version") != 2:
-        raise ValueError("P1 requires current dataset metadata schema version 2")
+    if metadata.get("schema_version") != 5:
+        raise ValueError("P1 requires current dataset metadata schema version 5")
     period = metadata["period"]
     begin = f"{period[0]}-01-01"
     end = f"{period[1]}-12-01"
@@ -2152,7 +2152,7 @@ def figure_p6_predicted_actual():
             )
         report = json.loads(report_path.read_text(encoding="utf-8"))
         protocol = report.get("dataset_protocol", {})
-        if protocol.get("schema_version") != 2:
+        if protocol.get("schema_version") != 5:
             raise ValueError(
                 f"P6 seed {seed} report is not dataset schema v2; rerun evaluation"
             )
@@ -2346,7 +2346,7 @@ def figure_p11_case_studies():
             checkpoint_path, map_location="cpu", weights_only=False
         )
         if (
-            report.get("dataset_protocol", {}).get("schema_version") != 2
+            report.get("dataset_protocol", {}).get("schema_version") != 5
             or state.get("artifact_metadata", {}).get("dataset_sha256") != current_hash
         ):
             raise ValueError(

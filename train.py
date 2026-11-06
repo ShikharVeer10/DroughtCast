@@ -169,6 +169,11 @@ def main():
     parser.add_argument("--holdout-region", action="append", default=[])
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    data_cfg, training_cfg = cfg["data"], cfg["training"]
+    data_cfg.setdefault("seq_len", data_cfg.get("lookback", 6))
+    data_cfg.setdefault("forecast_steps", data_cfg.get("horizon", 4))
+    training_cfg.setdefault("learning_rate", training_cfg.get("lr", 1e-3))
+    training_cfg.setdefault("early_stopping_patience", training_cfg.get("patience", 12))
     seed = args.seed if args.seed is not None else cfg["experiment"].get("seed", 42)
     seed_everything(seed)
     if not Path(cfg["data"]["path"]).exists():
@@ -189,6 +194,7 @@ def main():
         cfg["model"].get("heads", cfg["model"].get("head_mode", "direct"))
         == "residual",
         cfg.get("sites"),
+        cfg["data"].get("split_boundaries"),
     )
     train, val = data["train"], data["val"]
     if not len(train) or not len(val):
@@ -208,7 +214,7 @@ def main():
     )
     model = MultiScaleForecaster(cfg)
     quantiles = cfg["model"].get("quantiles")
-    task_weighting = cfg["training"].get("task_weighting", "uncertainty")
+    task_weighting = cfg["training"].get("task_weighting", "fixed")
     task_log_vars = (
         torch.nn.Parameter(torch.zeros(3)) if task_weighting == "uncertainty" else None
     )
@@ -232,8 +238,8 @@ def main():
     checkpoint.parent.mkdir(parents=True, exist_ok=True)
     best, stale = float("inf"), 0
     history = []
-    ext_weight = cfg["training"].get("extreme_weight", 3.0)
-    ext_thresh = cfg["training"].get("extreme_threshold", -1.5)
+    ext_weight = cfg["training"].get("extreme_weight", 1.0)
+    ext_thresh = cfg["training"].get("extreme_threshold", -1.0)
     loss_kind = cfg["training"].get("loss", "mse")
 
     for epoch in range(cfg["training"]["epochs"]):

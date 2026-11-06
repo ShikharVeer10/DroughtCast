@@ -13,6 +13,7 @@ import torch
 from data.dataset import DroughtResearchDataset
 from data.preprocessing import ClimateNormalizer
 from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
+from data.quality import validate_site_table
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
 DEFAULT_FEATURES = [
@@ -59,6 +60,17 @@ def split_for_date(date: pd.Timestamp) -> str | None:
     return None
 
 
+def split_for_date_with_boundaries(date: pd.Timestamp, train_end: str, val_start: str, val_end: str, test_start: str, test_end: str | None = None) -> str | None:
+    date = pd.Timestamp(date)
+    if date <= pd.Timestamp(train_end):
+        return "train"
+    if pd.Timestamp(val_start) <= date <= pd.Timestamp(val_end):
+        return "val"
+    if date >= pd.Timestamp(test_start) and (test_end is None or date <= pd.Timestamp(test_end)):
+        return "test"
+    return None
+
+
 def load_site_table(
     path: str | Path,
     features: list[str] | None = None,
@@ -71,12 +83,23 @@ def load_site_table(
     static_context: bool = False,
     residual_heads: bool = False,
     site_specs: dict[str, dict[str, Any]] | None = None,
+    split_config: dict[str, str] | None = None,
 ) -> dict[str, DroughtResearchDataset]:
     frame = pd.read_csv(path, parse_dates=["date"])
+    frame = frame.replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
+    frame["site"] = frame["site"].astype(str).str.strip().str.lower()
+    if site_filter is not None:
+        allowed_sites = {str(s).lower() for s in site_filter}
+        unexpected = set(frame["site"].unique()) - allowed_sites
+        if unexpected:
+            raise ValueError(f"Non-Maharashtra/unconfigured sites in dataset: {sorted(unexpected)}")
     required = {"date", "site", *TARGETS}
     missing = required.difference(frame.columns)
     if missing:
         raise ValueError(f"Dataset missing columns: {sorted(missing)}")
+    allowed_regions = {"Marathwada", "Vidarbha", "Madhya_Maharashtra", "Konkan"}
+    if "region" in frame and site_filter and not set(frame["region"].dropna().astype(str).str.replace(" ", "_", regex=False).unique()).issubset(allowed_regions):
+        raise ValueError("Input contains non-Maharashtra regions")
     input_extras = list(input_extras or [])
     known_extras = {"month_sincos", "water_balance"}
     unknown_extras = set(input_extras) - known_extras
@@ -94,6 +117,9 @@ def load_site_table(
         ) * frame["date"].dt.days_in_month - pd.to_numeric(
             frame["pet_mm"], errors="coerce"
         )
+    if "region" in frame:
+        region_alias = {"madhya maharashtra": "Madhya_Maharashtra"}
+        frame["region"] = frame["region"].astype(str).replace(region_alias)
     features = list(features or [c for c in DEFAULT_FEATURES if c in frame.columns])
     if "month_sincos" in input_extras:
         features.extend(["month_sin", "month_cos"])
@@ -111,6 +137,7 @@ def load_site_table(
         if unknown_sites:
             raise ValueError(f"Unknown configured site(s): {sorted(unknown_sites)}")
         frame = frame[frame["site"].astype(str).isin(site_filter)].copy()
+    validate_site_table(frame, features, site_filter, strict=site_filter is not None)
     holdout_regions = set(holdout_regions or [])
     unknown_regions = (
         holdout_regions.difference(frame["region"].dropna().unique())
@@ -152,26 +179,46 @@ def load_site_table(
     }
     for site, rows in frame.groupby("site", sort=False):
         rows = rows.set_index("date").sort_index()
+        if rows.index.has_duplicates:
+            raise ValueError(f"Duplicate monthly observations for site {site}")
         expected = pd.date_range(rows.index.min(), rows.index.max(), freq="MS")
         if not rows.index.equals(expected):
+            print(f"Missing climate inputs before windowing: site={site}, missing_months={len(expected.difference(rows.index))}")
             rows = rows.reindex(expected)
             rows.index.name = "date"
             rows["site"] = site
-        split_rows = np.array([split_for_date(d) for d in rows.index], dtype=object)
+        split_fn = split_for_date
+        if split_config:
+            split_fn = lambda d: split_for_date_with_boundaries(
+                d, split_config["train_end"], split_config["val_start"],
+                split_config["val_end"], split_config["test_start"],
+                split_config.get("test_end")
+            )
+        split_rows = np.array([split_fn(d) for d in rows.index], dtype=object)
         region = (
             str(rows["region"].dropna().iloc[0])
             if "region" in rows and rows["region"].notna().any()
             else "unknown"
         )
+        # Do not interpolate across chronological boundaries: that would use
+        # validation/test observations to impute an earlier split. Missing
+        # inputs remain invalid windows rather than receiving a future-derived
+        # value; the normalizer itself is still fitted on train rows only.
         feature_frame = rows[features].apply(pd.to_numeric, errors="coerce")
         train_mask = split_rows == "train"
+        missing_counts = feature_frame.isna().sum()
+        if missing_counts.any():
+            print(f"Missing climate inputs before windowing: site={site}, " + ", ".join(f"{k}={int(v)}" for k,v in missing_counts.items() if v))
         # Per-feature train-only moments, ignoring missing values.
+        if not train_mask.any():
+            raise ValueError(f"Site {site} has no training observations")
         normalizer = (
             global_normalizer
             if global_normalizer is not None
             else ClimateNormalizer().fit(feature_frame.to_numpy()[train_mask])
         )
         normalized = normalizer.transform(feature_frame.to_numpy())
+        normalized[~np.isfinite(normalized)] = np.nan
         normalizers[str(site)] = normalizer.to_dict()
         targets = rows[TARGETS].to_numpy(dtype=float)
         dates = rows.index
@@ -209,6 +256,8 @@ def load_site_table(
             x = normalized[input_idx]
             y = targets[target_idx].T  # [scale, lead]
             mask = np.isfinite(y)
+            if not mask.any():
+                continue
             # Missing inputs invalidate the sample; missing targets are retained as masks.
             if not np.isfinite(x).all():
                 continue
@@ -227,7 +276,16 @@ def load_site_table(
                     .values.tolist(),
                     "target_dates": [str(d.date()) for d in dates[target_idx]],
                     "index_source_dates": [
-                        str((d - pd.offsets.MonthBegin(1)).date())
+                        str((d - pd.DateOffset(months=1)).date())
+                        for d in dates[input_idx]
+                    ],
+                    "index_source_dates_by_index": [
+                        {
+                            name: str((d - pd.DateOffset(months=lag)).date())
+                            for name, lag in (
+                                ("oni", 2), ("dmi", 1), ("nao", 1), ("pdo", 1)
+                            )
+                        }
                         for d in dates[input_idx]
                     ],
                 }

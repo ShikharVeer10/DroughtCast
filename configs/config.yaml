@@ -1,4 +1,4 @@
-# Maharashtra-only DroughtCast training configuration (18-feature biophysical + vegetation schema).
+# Maharashtra-only DroughtCast quantile configuration (12 inputs).
 experiment:
   name: maharashtra_droughtcast
   seed: 42
@@ -67,6 +67,9 @@ sites:
 
 data:
   path: data/maharashtra/monthly_sites.csv
+  start_year: 1990
+  end_year: 2026
+  end_month: 10
   site_filter:
     - akola
     - amravati
@@ -85,13 +88,7 @@ data:
     - T2M
     - T2MDEW
     - WS10M
-    - ALLSKY_SFC_SW_DWN
     - GWETTOP
-    - GWETROOT
-    - VPD
-    - T2M_RANGE
-    - NDVI
-    - VCI
     - oni
     - dmi
     - nao
@@ -103,24 +100,29 @@ data:
     - spei_3
     - spei_6
     - spei_12
-  lookback: 24
-  horizon: 3
-  train_Split: "1981-2010"
-  val_Split: "2011-2016"
-  test_Split: "2017-2024"
+  seq_len: 6
+  forecast_steps: 4
+  train_split: "1990-2010"
+  val_split: "2013-2014"
+  test_split: "2017-2025"
+  split_boundaries:
+    train_end: "2010-12-01"
+    val_start: "2013-01-01"
+    val_end: "2014-12-01"
+    test_start: "2017-01-01"
+    test_end: "2025-12-01"
 
 model:
-  architecture: lstm
-  input_dim: 18
-  hidden_dim: 128
-  num_layers: 2
+  encoder: lstm
+  attention: shared
+  heads: direct
+  input_dim: 12
+  hidden_dim_1: 64
+  hidden_dim_2: 32
   dropout: 0.2
-  attention_heads: 4
-  head_specific_attention: false
   use_attention: true
   use_variable_gate: true
-  use_teleconnection_gate: true
-  use_cascaded_decoder: true
+  use_cascaded_decoder: false
   quantiles:
     - 0.1
     - 0.5
@@ -129,12 +131,13 @@ model:
 training:
   epochs: 60
   batch_size: 32
-  lr: 0.001
+  learning_rate: 0.001
+  lr_patience: 5
   weight_decay: 0.0001
-  patience: 12
+  early_stopping_patience: 12
   grad_clip: 1.0
   extreme_weight: 1.5
   extreme_threshold: -1.0
-  checkpoint_dir: checkpoints/maharashtra
-  loss: mse
-  task_weighting: uncertainty
+  checkpoint_dir: checkpoints/maharashtra_2026
+  loss: pinball
+  task_weighting: fixed

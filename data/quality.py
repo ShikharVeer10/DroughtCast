@@ -10,6 +10,37 @@ import pandas as pd
 SCALES = ("spei_3", "spei_6", "spei_12")
 
 
+def validate_site_table(frame: pd.DataFrame, features: list[str], expected_sites: list[str] | None = None, *, strict: bool = False) -> dict:
+    """Validate monthly coverage, finite inputs, and usable targets before windows."""
+    needed = {"site", "date", *features, *SCALES}
+    missing = needed.difference(frame.columns)
+    if missing and strict:
+        raise ValueError(f"Site table missing columns: {sorted(missing)}")
+    dates = pd.to_datetime(frame["date"])
+    if (dates.dt.day != 1).any() or frame.duplicated(["site", "date"]).any():
+        raise ValueError("Site table must have unique first-of-month observations")
+    sites = sorted(frame["site"].astype(str).unique())
+    if strict and expected_sites is not None and set(sites) != set(expected_sites):
+        raise ValueError(f"Site set mismatch: expected={sorted(expected_sites)}, actual={sites}")
+    report = {}
+    for site, group in frame.assign(date=dates).groupby("site"):
+        observed = pd.DatetimeIndex(group["date"].sort_values())
+        expected = pd.date_range(observed.min(), observed.max(), freq="MS")
+        if strict and not observed.equals(expected):
+            raise ValueError(f"Monthly chronology has gaps for {site}")
+        inputs = group[features].apply(pd.to_numeric, errors="coerce")
+        nonfinite = ~np.isfinite(inputs.to_numpy())
+        target_valid = group[list(SCALES)].apply(pd.to_numeric, errors="coerce").notna().sum().to_dict()
+        report[str(site)] = {"observations": len(group), "input_nonfinite": int(nonfinite.sum()), "target_valid": {k: int(v) for k, v in target_valid.items()}}
+        # Missing input rows are reported and excluded by the window constructor;
+        # fail only if a required feature has no finite training observations.
+        if strict and any(not np.isfinite(inputs.loc[dates <= pd.Timestamp("2010-12-01"), col]).any() for col in features):
+            raise ValueError(f"Feature has no finite training observations for {site}")
+        if strict and any(v == 0 for v in target_valid.values()):
+            raise ValueError(f"No valid target observations for {site}: {target_valid}")
+    return report
+
+
 def target_quality_report(frame: pd.DataFrame, calibration_end: str = "2010-12-01") -> dict:
     required = {"site", "date", *SCALES}
     missing = required.difference(frame.columns)

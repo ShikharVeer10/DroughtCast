@@ -1,0 +1,17 @@
+{
+  "git_commit": "cee25a838d44773e29abd39046b24013ad3c786c",
+  "config_sha256": "e403c6f0492befbb6bd20959feba86bfc3b6ead12e48a2173e8faef19a7bf7ee",
+  "config_path": "configs\\base_diagram.yaml",
+  "seeds": [],
+  "dataset_schema_version": 3,
+  "test_period": [
+    "2017-01-01",
+    "2026-12-01"
+  ],
+  "source_rows": 10,
+  "source_data_file": "data/P1_data_model_pipeline.csv",
+  "figure_quality": {
+    "ok": true,
+    "errors": []
+  }
+}

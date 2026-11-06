@@ -55,6 +55,7 @@ def main() -> None:
         cfg["model"].get("static_context", False),
         False,
         cfg.get("sites"),
+        cfg["data"].get("split_boundaries"),
     )
     cfg["data"]["input_dim"] = data["test"].X.shape[-1]
     state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)

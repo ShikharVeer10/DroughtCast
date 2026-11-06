@@ -19,9 +19,9 @@ The canonical configuration is [`configs/base_diagram.yaml`](configs/base_diagra
 
 `data/build_dataset.py` builds monthly data from NASA POWER climate fields and NOAA indices. PET uses the monthly Hargreaves-Samani approximation and mid-month day-of-year for extraterrestrial radiation. SPEI is standardized using calibration data through December 2010. Each feature month *m* uses the published ONI, DMI, NAO, and PDO values for month *m−1*. The observed state features `spei_3_obs`, `spei_6_obs`, and `spei_12_obs` use SPEI observed through the final input month, matching persistence information.
 
-Chronological windows retain the train period through 2010-12, validation 2012-01 through 2015-12, and test from 2017-01. The intervening gaps are intentionally excluded. Feature normalization and SPEI calibration use training data only.
+Chronological windows retain the train period through 2010-12, validation 2013-01 through 2014-12, and test from 2017-01. The intervening gaps are intentionally excluded to exceed the six-month input, four-lead target, and 12-month SPEI accumulation dependency. Feature normalization and SPEI calibration use training data only.
 
-Training and evaluation require dataset metadata schema version 3. Rebuild older local datasets before running either command. Paper figures also require a current run manifest so stale metrics are not plotted as current evidence.
+Training and evaluation require dataset metadata schema version 5. Rebuild older local datasets before running either command. Paper figures also require a current run manifest so stale metrics are not plotted as current evidence.
 
 ## Maharashtra-only dataset
 

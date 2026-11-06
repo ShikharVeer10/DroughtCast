@@ -75,7 +75,9 @@ def extract_reference(
                 )
             variable = candidates[0]
         records = []
-        for site, location in (sites or SITES).items():
+        if not sites:
+            raise ValueError("Maharashtra site coordinates must be supplied from config")
+        for site, location in sites.items():
             point = ds[variable].sel(
                 {lat_name: location["lat"], lon_name: location["lon"]}, method="nearest"
             )

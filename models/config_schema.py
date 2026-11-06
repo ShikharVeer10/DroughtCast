@@ -1,95 +1,27 @@
+"""Configuration validation for the DroughtCast forecaster."""
+
 from __future__ import annotations
 
 from typing import Any
 
 ALLOWED_TOP = {"experiment", "sites", "data", "model", "training"}
-
 ALLOWED_EXPERIMENT = {"name", "seed"}
 ALLOWED_DATA = {
-    "path",
-    "metadata_path",
-    "start_year",
-    "end_year",
-    "features",
-    "seq_len",
-    "forecast_steps",
-    "input_dim",
-    "site_filter",
+    "path", "metadata_path", "start_year", "end_year", "end_month", "features", "seq_len",
+    "forecast_steps", "input_dim", "site_filter", "train_split", "val_split", "test_split", "target_scales", "split_boundaries",
 }
 ALLOWED_MODEL = {
-    "input_dim",
-    "hidden_dim_1",
-    "hidden_dim_2",
-    "dropout",
-    "attention",
-    "encoder",
-    "heads",
-    "head_mode",
-    "use_cascaded_decoder",
-    "variable_gate",
-    "separate_encoders",
-    "quantiles",
-    "spei3_dropout",
-    "static_context",
-    "input_extras",
-    "consistency_weight",
+    "input_dim", "hidden_dim_1", "hidden_dim_2", "dropout", "attention", "encoder",
+    "heads", "head_mode", "use_cascaded_decoder", "variable_gate", "separate_encoders",
+    "quantiles", "spei3_dropout", "static_context", "input_extras", "consistency_weight",
+    "use_attention", "use_variable_gate",
 }
 ALLOWED_TRAINING = {
-    "batch_size",
-    "epochs",
-    "learning_rate",
-    "weight_decay",
-    "early_stopping_patience",
-    "lr_patience",
-    "extreme_weight",
-    "extreme_threshold",
-    "checkpoint_dir",
-    "loss",
-    "task_weighting",
+    "batch_size", "epochs", "learning_rate", "lr", "weight_decay", "early_stopping_patience",
+    "patience", "lr_patience", "extreme_weight", "extreme_threshold", "grad_clip",
+    "checkpoint_dir", "loss", "task_weighting",
 }
-
-canonical_features = [
-        "PRECTOTCORR",
-        "T2M",
-        "T2MDEW",
-        "WS10M",
-        "ALLSKY_SFC_SW_DWN",
-        "GWETTOP",
-        "GWETROOT",
-        "VPD",
-        "T2M_RANGE",
-        "NDVI",
-        "VCI",
-        "oni",
-        "dmi",
-        "nao",
-        "pdo",
-        "spei_3_obs",
-        "spei_6_obs",
-        "spei_12_obs",
-    ]
-    features = data.get("features")
-    if not isinstance(features, list) or not features:
-      raise ValueError("data.features must be a non-empty list")
-    unknown_feats = [f for f in features if f not in canonical_features]
-    if unknown_feats:
-      raise ValueError(f"Unknown features in data.features: {unknown_feats}")
-    if model.get("input_dim") != len(features):
-      raise ValueError(
-          f"model.input_dim ({model.get('input_dim')}) must equal"
-          f" len(data.features) ({len(features)})"
-      )
-
-DEAD_MODEL_KEYS = {
-    "hidden_dim",
-    "out_hidden_dim",
-    "num_layers",
-    "num_quantiles",
-    "use_teleconnection_gate",
-    "use_multi_horizon_attn",
-    "use_cascade_decoder",
-    "forecast_steps",  # lives under data
-}
+DEAD_MODEL_KEYS = {"hidden_dim", "out_hidden_dim", "num_layers", "num_quantiles", "forecast_steps"}
 
 
 def _reject_unknown(section: str, values: dict[str, Any] | None, allowed: set[str]) -> None:
@@ -97,25 +29,27 @@ def _reject_unknown(section: str, values: dict[str, Any] | None, allowed: set[st
         return
     unknown = set(values) - allowed
     if unknown:
-        raise ValueError(f"Unknown config key(s) under '{section}': {sorted(unknown)}. "f"Allowed: {sorted(allowed)}")
+        raise ValueError(f"Unknown config key(s) under '{section}': {sorted(unknown)}")
 
 
 def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(cfg, dict):
         raise TypeError("config must be a mapping")
-    unknown_top = set(cfg) - ALLOWED_TOP
-    if unknown_top:
-        raise ValueError(f"Unknown top-level config key(s): {sorted(unknown_top)}")
+    unknown = set(cfg) - ALLOWED_TOP
+    if unknown:
+        raise ValueError(f"Unknown top-level config keys: {sorted(unknown)}")
     _reject_unknown("experiment", cfg.get("experiment"), ALLOWED_EXPERIMENT)
     _reject_unknown("data", cfg.get("data"), ALLOWED_DATA)
+    _reject_unknown("model", cfg.get("model"), ALLOWED_MODEL)
     _reject_unknown("training", cfg.get("training"), ALLOWED_TRAINING)
-    model = cfg.get("model") or {}
-    dead = set(model) & DEAD_MODEL_KEYS
-    if dead:
-        raise ValueError(
-            f"Dead/removed model config key(s): {sorted(dead)}. "
-            "Use hidden_dim_1/hidden_dim_2, attention, heads/head_mode, "
-            "use_cascaded_decoder instead of the legacy flags."
-        )
-    _reject_unknown("model", model, ALLOWED_MODEL)
+    data, model = cfg.get("data", {}), cfg.get("model", {})
+    features = data.get("features")
+    if features is not None:
+        if not isinstance(features, list) or not features:
+            raise ValueError("data.features must be a non-empty list")
+        if model.get("input_dim") is not None and model["input_dim"] != len(features):
+            raise ValueError(f"model.input_dim ({model['input_dim']}) must equal len(data.features) ({len(features)})")
+    quantiles = model.get("quantiles")
+    if quantiles is not None and (len(quantiles) != 3 or quantiles != sorted(quantiles) or any(not 0 < q < 1 for q in quantiles)):
+        raise ValueError("model.quantiles must be three increasing probabilities in (0,1)")
     return cfg

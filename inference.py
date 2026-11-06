@@ -15,9 +15,8 @@ from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
 from utils.probability import (
-    event_z,
-    fit_platt_calibrator,
-    raw_event_probability,
+    fit_isotonic_calibrator,
+    quantile_risk_below_threshold,
 )
 
 SCALES = ("spei_3", "spei_6", "spei_12")
@@ -120,7 +119,7 @@ def _load_recent_input(input_csv: Path, site: str, features: list[str], seq_len:
     raw = recent[features].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
     if not np.isfinite(raw).all():
         raise ValueError(
-            "The latest six input rows contain missing or nonnumeric feature values"
+            f"The latest {seq_len} input rows contain missing or nonnumeric feature values"
         )
     saved = json.loads(metadata_path.read_text(encoding="utf-8"))
     normalizer = saved.get("normalizers", {}).get(site)
@@ -170,6 +169,11 @@ def main():
         help="Write the exact forecasts shown in the terminal to this CSV",
     )
     parser.add_argument(
+        "--allow-unmatched-dataset",
+        action="store_true",
+        help="Allow a newly rebuilt dataset as forecast input while retaining checkpoint training normalizers",
+    )
+    parser.add_argument(
         "--drought-threshold",
         "--threshold",
         dest="drought_threshold",
@@ -212,6 +216,7 @@ def main():
     if (
         input_csv.resolve() == training_data_path.resolve()
         and hashlib.sha256(input_csv.read_bytes()).hexdigest() != training_hash
+        and not args.allow_unmatched_dataset
     ):
         raise ValueError("Input dataset changed after checkpoint training; use a separate --input-csv for new observations")
 
@@ -227,6 +232,7 @@ def main():
         cfg["model"].get("static_context", False),
         False,
         cfg.get("sites"),
+        cfg["data"].get("split_boundaries"),
     )
     validation = calibration_data["val"]
     if not len(validation):
@@ -278,9 +284,11 @@ def main():
                     "Check the validation target distribution and drought threshold."
                 )
 
-            val_z = event_z(val_quantiles, args.drought_threshold)
+            val_risk = quantile_risk_below_threshold(
+                val_quantiles, args.drought_threshold
+            )
             calibrators[(scale_index, lead)] = (
-                fit_platt_calibrator(val_z, val_events),
+                fit_isotonic_calibrator(val_risk, val_events),
                 int(valid.sum()),
             )
 
@@ -290,7 +298,7 @@ def main():
     print(f"Checkpoint: {chk_path}")
     print(f"Input data: {input_csv}")
     print(f"Event: SPEI <= {args.drought_threshold:.1f}")
-    print("Calibration: validation-only Platt scaling, fitted separately by scale and lead")
+    print("Calibration: validation-only isotonic mapping of q10/q50/q90 risk, fitted separately by scale and lead")
     rows = []
     for site_index, site in enumerate(selected_sites):
         _, input_dates, _ = site_inputs[site]
@@ -298,8 +306,8 @@ def main():
         print(
             f"\nSite: {site} | input: {input_dates[0]:%Y-%m} through {last_input:%Y-%m}"
         )
-        print("Scale   Lead  Target month  q10     q50     q90     P(drought)              n_val")
-        print("------  ----  ------------  ------  ------  ------  ----------------------  -----")
+        print("Scale   Lead  Target month  q10     q50     q90     P(drought)  P(no drought)  n_val")
+        print("------  ----  ------------  ------  ------  ------  ----------  -------------  -----")
         for scale_index, scale in enumerate(SCALES):
             for lead in range(int(cfg["data"]["forecast_steps"])):
                 calibrator, n_val = calibrators[(scale_index, lead)]
@@ -314,9 +322,12 @@ def main():
                 if not(forecast_quantiles[0]<=forecast_quantiles[1]<=forecast_quantiles[2]):
                     raise ValueError(f"Quantile ordering error for {site}, {scale}, lead{lead+1}")   
                 
-                raw_z = float(event_z(forecast_quantiles, args.drought_threshold))
-                raw_probability = float(raw_event_probability(raw_z))
-                calibrated_probability = float(calibrator.predict(np.asarray([raw_z]))[0])
+                raw_probability = float(quantile_risk_below_threshold(
+                    forecast_quantiles, args.drought_threshold
+                ))
+                calibrated_probability = float(calibrator.predict(
+                    np.asarray([raw_probability])
+                )[0])
 
                 if not np.isfinite(calibrated_probability):
                     raise ValueError("Calibrated probability is not finite")
@@ -327,7 +338,7 @@ def main():
                 target_month = last_input + pd.DateOffset(months=lead + 1)
                 q10, q50, q90 = (float(v) for v in forecast_quantiles)
                 print(
-                    f"{scale.upper():<7} T+{lead + 1:<2}  {target_month:%Y-%m}       {q10:>5.2f}   {q50:>5.2f}   {q90:>5.2f}  {calibrated_probability:>22.2f}  {n_val:>3}"
+                    f"{scale.upper():<7} T+{lead + 1:<2}  {target_month:%Y-%m}       {q10:>5.2f}   {q50:>5.2f}   {q90:>5.2f}  {calibrated_probability:>10.2f}  {1-calibrated_probability:>13.2f}  {n_val:>3}"
                 )
                 rows.append(
                     {
@@ -342,9 +353,9 @@ def main():
                         "q50": q50,
                         "q90": q90,
                         "raw_probability": raw_probability,
-                        "raw_z": raw_z,
+                        "no_drought_probability": 1.0 - calibrated_probability,
                         "calibrated_probability": calibrated_probability,
-                        "calibration": "validation-only Platt scaling",
+                        "calibration": "validation-only isotonic calibration of quantile-interpolated risk",
                         "n_validation": n_val,
                         "checkpoint": str(chk_path),
                         "dataset_sha256": checkpoint_meta.get("dataset_sha256", ""),
