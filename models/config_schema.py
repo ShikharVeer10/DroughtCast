@@ -48,25 +48,37 @@ ALLOWED_TRAINING = {
     "task_weighting",
 }
 
-expected_features = [
-    "prectotcorr",
-    "t2m",
-    "t2m_max",
-    "t2m_min",
-    "t2mdew",
-    "ws10m",
-    "allsky_sfc_sw_dwn",
-    "gwettop",
-    "gwetroot",
-    "ndvi",
-    "vci",
-    "vpd",
-    "oni_lag1",
-    "dmi_lag1",
-    "month_sin",
-    "month_cos",
-]
-input_dim = len(expected_features)
+canonical_features = [
+        "PRECTOTCORR",
+        "T2M",
+        "T2MDEW",
+        "WS10M",
+        "ALLSKY_SFC_SW_DWN",
+        "GWETTOP",
+        "GWETROOT",
+        "VPD",
+        "T2M_RANGE",
+        "NDVI",
+        "VCI",
+        "oni",
+        "dmi",
+        "nao",
+        "pdo",
+        "spei_3_obs",
+        "spei_6_obs",
+        "spei_12_obs",
+    ]
+    features = data.get("features")
+    if not isinstance(features, list) or not features:
+      raise ValueError("data.features must be a non-empty list")
+    unknown_feats = [f for f in features if f not in canonical_features]
+    if unknown_feats:
+      raise ValueError(f"Unknown features in data.features: {unknown_feats}")
+    if model.get("input_dim") != len(features):
+      raise ValueError(
+          f"model.input_dim ({model.get('input_dim')}) must equal"
+          f" len(data.features) ({len(features)})"
+      )
 
 DEAD_MODEL_KEYS = {
     "hidden_dim",
@@ -83,14 +95,9 @@ DEAD_MODEL_KEYS = {
 def _reject_unknown(section: str, values: dict[str, Any] | None, allowed: set[str]) -> None:
     if not values:
         return
-    if not isinstance(values, dict):
-        raise TypeError(f"config section '{section}' must be a mapping")
     unknown = set(values) - allowed
     if unknown:
-        raise ValueError(
-            f"Unknown config key(s) under '{section}': {sorted(unknown)}. "
-            f"Allowed: {sorted(allowed)}"
-        )
+        raise ValueError(f"Unknown config key(s) under '{section}': {sorted(unknown)}. "f"Allowed: {sorted(allowed)}")
 
 
 def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
