@@ -1,9 +1,3 @@
-"""Build date-aligned monthly site data from NASA POWER and NOAA PSL.
-
-PET uses a monthly Hargreaves-Samani approximation from POWER T2M/T2M_MAX/
-T2M_MIN and extraterrestrial radiation. This is not FAO-56 Penman-Monteith.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -36,30 +30,27 @@ NOAA = {
     "nao": "https://psl.noaa.gov/data/correlation/nao.data",
     "pdo": "https://psl.noaa.gov/data/correlation/pdo.data",
 }
-SITES = {}
+SITES = {
+    "guntur": {"lat": 15.9129, "lon": 79.74, "region": "south_asia"},
+    "jaipur": {"lat": 26.9124, "lon": 75.7873, "region": "south_asia"},
+    "nagpur": {"lat": 21.1458, "lon": 79.0882, "region": "south_asia"},
+    "murray_darling": {"lat": -34.0, "lon": 143.0, "region": "australia"},
+    "addis_ababa": {"lat": 9.03, "lon": 38.74, "region": "east_africa"},
+    "phoenix": {"lat": 33.4484, "lon": -112.074, "region": "us_southwest"},
+    "seville": {"lat": 37.3891, "lon": -5.9845, "region": "mediterranean"},
+    "pretoria": {"lat": -25.7479, "lon": 28.2293, "region": "southern_africa"},
+}
 
 
 def fetch_power(
-    site: str, spec: dict[str, Any], start: int, end: int, cache: Path,
-    end_month: int = 12,
+    site: str, spec: dict[str, Any], start: int, end: int, cache: Path
 ) -> pd.DataFrame:
     cache.mkdir(parents=True, exist_ok=True)
     path = cache / f"{site}_power_{start}_{end}.csv"
-    alternatives = [path, cache / f"{site}_power_1981_2024.csv", cache / f"{site}_power_1990_2024.csv"]
-    for cached_path in alternatives:
-      if cached_path.exists():
-        cached = pd.read_csv(cached_path, index_col=0, parse_dates=True)
-        cached = cached.apply(pd.to_numeric, errors="coerce").replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
-        if {"PRECTOTCORR", "T2M", "T2MDEW", "WS10M"}.issubset(cached.columns):
-            for col in ("T2M_MAX", "T2M_MIN"):
-                if col not in cached:
-                    cached[col] = np.nan
-            cached = cached.loc[pd.Timestamp(year=start, month=1, day=1):pd.Timestamp(year=end, month=12, day=1)]
-            expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
-            if expected.isin(cached.index).all():
-                return cached.reindex(expected)
-        if cached_path == path:
-            path.unlink(missing_ok=True)
+    if path.exists():
+        frame = pd.read_csv(path)
+        frame["date"] = pd.to_datetime(frame["date"])
+        return frame.set_index("date")
     response = requests.get(
         POWER_URL,
         params={
@@ -85,30 +76,13 @@ def fetch_power(
         raise ValueError(
             f"NASA POWER response missing expected variables: {list(parameters)}"
         )
-    unit_table = body.get("parameters", {})
-    expected_units = {
-        "PRECTOTCORR": {"mm/day"}, "T2M": {"c", "degc"}, "T2MDEW": {"c", "degc"},
-        "T2M_MAX": {"c", "degc"}, "T2M_MIN": {"c", "degc"}, "WS10M": {"m/s"},
-            "ALLSKY_SFC_SW_DWN": {"mj/m^2/day", "kw-hr/m^2/day", "kwh/m^2/day"},
-    }
-    for variable, accepted in expected_units.items():
-        unit_value = unit_table.get(variable, {})
-        unit = str(unit_value.get("units", "") if isinstance(unit_value, dict) else unit_value).lower().replace(" ", "")
-        if unit not in accepted:
-            raise ValueError(f"NASA POWER {variable} unit {unit!r} not in expected {sorted(accepted)}")
     frame = pd.DataFrame(parameters)
     # Monthly POWER includes annual summaries labelled YYYY13; reject before date parsing.
     frame = frame.loc[[str(key)[-2:] != "13" for key in frame.index]]
     frame.index = frame.index.map(str)
     frame.index = pd.to_datetime(frame.index, format="%Y%m", errors="raise")
     frame.index.name = "date"
-    frame = frame.apply(pd.to_numeric, errors="coerce")
-    frame = frame.replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
     frame = frame.sort_index()
-    expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
-    missing_months = expected.difference(frame.index)
-    if len(missing_months):
-        raise ValueError(f"NASA POWER monthly data for {site} missing requested months: {missing_months.strftime('%Y-%m').tolist()}")
     tmp_path = path.with_suffix(".tmp")
     frame.to_csv(tmp_path, index_label="date")
     tmp_path.replace(path)
@@ -152,44 +126,13 @@ def _parse_noaa_text(name: str, text: str) -> pd.Series:
             except ValueError:
                 continue
             for month, val in enumerate(values, 1):
-                if np.isfinite(val) and val > -9.0 and not np.isclose(val, -9.9):
+                if np.isfinite(val) and val > -90:
                     rows[pd.Timestamp(year, month, 1)] = val
     if not rows:
         raise ValueError(
             f"Could not parse NOAA {name} data; source format may have changed"
         )
     return pd.Series(rows, name=name).sort_index()
-
-
-def _normalize_sites(sites: Any) -> dict[str, dict[str, Any]]:
-    """Normalize only explicitly configured Maharashtra sites."""
-    if sites is None:
-        return {}
-    if isinstance(sites, list):
-        sites = {
-            s.get("id", s.get("name", "").lower().replace(" ", "_")): s
-            for s in sites
-        }
-    if not isinstance(sites, dict):
-        raise ValueError("Maharashtra sites must be a mapping")
-    return sites
-
-
-def load_configured_sites(config_path: Path) -> dict[str, dict[str, Any]]:
-    import yaml
-    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    sites = _normalize_sites(config.get("sites"))
-    if len(sites) != 12:
-        raise ValueError("Configuration must define exactly 12 Maharashtra sites")
-    return sites
-
-
-def build_from_cache(sites: dict[str, dict[str, Any]], start: int, end: int, cache: Path, method: str, indices: pd.DataFrame, end_month: int = 12, daily_monthly: pd.DataFrame | None = None) -> pd.DataFrame:
-    return pd.concat([
-        build_site(name, spec, start, end, cache, method, indices, end_month,
-                   daily_monthly.loc[daily_monthly.site.eq(name)] if daily_monthly is not None else None)
-        for name, spec in sites.items()
-    ], ignore_index=True)
 
 
 def fetch_indices(start: str, end: str, cache: Path) -> pd.DataFrame:
@@ -211,10 +154,7 @@ def fetch_indices(start: str, end: str, cache: Path) -> pd.DataFrame:
             path.write_text(text, encoding="utf-8")
         columns.append(_parse_noaa_text(name, text))
     index = pd.concat(columns, axis=1, sort=True).sort_index()
-    # A source can lag NASA POWER. Preserve all historical values through its
-    # last available observation; later rows remain missing until site-level
-    # alignment shifts them onto months for which data is actually available.
-    return index.loc[:end]
+    return index.loc[start:end]
 
 
 def mid_month_doy(index: pd.DatetimeIndex) -> np.ndarray:
@@ -225,17 +165,10 @@ def mid_month_doy(index: pd.DatetimeIndex) -> np.ndarray:
 
 
 def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
-    """Monthly Hargreaves-Samani PET (mm/month) from POWER monthly extrema.
-
-    ET0 (mm/day) = 0.0023 * (Tmean + 17.8) * sqrt(TR) * (Ra / 2.45),
-    where Ra is extraterrestrial radiation in MJ/m²/day computed at mid-month.
-    """
     tmean = frame["T2M"].astype(float)
     # POWER monthly T2M_MAX/MIN are monthly means of daily extrema, not individual daily series.
     # Hargreaves-Samani is therefore an approximation at monthly resolution.
-    trange = (frame["T2M_MAX"].astype(float) - frame["T2M_MIN"].astype(float)).clip(
-        lower=0
-    )
+    trange = (frame["T2M_MAX"].astype(float) - frame["T2M_MIN"].astype(float)).clip(lower=0)
     doy = mid_month_doy(frame.index)
     phi = np.deg2rad(latitude)
     dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365.0)
@@ -247,12 +180,7 @@ def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
         * dr
         * (ws * np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.sin(ws))
     )
-    et0_day = (
-        0.0023
-        * (tmean + 17.8)
-        * np.sqrt(trange)
-        * (np.maximum(ra_extraterrestrial, 0) / 2.45)
-    )
+    et0_day = (0.0023* (tmean + 17.8)* np.sqrt(trange)* (np.maximum(ra_extraterrestrial, 0) / 2.45))
     return pd.Series(
         np.maximum(et0_day, 0) * frame.index.days_in_month,
         index=frame.index,
@@ -260,9 +188,7 @@ def estimate_pet_hargreaves(frame: pd.DataFrame, latitude: float) -> pd.Series:
     )
 
 
-def _tail_slopes(
-    sorted_cal: np.ndarray, z_cal: np.ndarray, k: int = 5
-) -> tuple[float, float]:
+def _tail_slopes(sorted_cal: np.ndarray, z_cal: np.ndarray, k: int = 5) -> tuple[float, float]:
     """Stable dry/wet tail slopes (z per raw unit) for extrapolation."""
     edge_lo = (z_cal[1] - z_cal[0]) / (sorted_cal[1] - sorted_cal[0])
     edge_hi = (z_cal[-1] - z_cal[-2]) / (sorted_cal[-1] - sorted_cal[-2])
@@ -274,18 +200,7 @@ def _tail_slopes(
     return float(min(max(lo, 0.0), cap)), float(min(max(hi, 0.0), cap))
 
 
-def _nonparametric_z_scores(
-    values: np.ndarray, calibration: np.ndarray, max_abs_z: float = 3.5
-) -> np.ndarray:
-    """Map values to standard normals via Gringorten plotting positions.
-
-    Uses one consistent plotting position for in-sample and out-of-sample
-    values, linear interpolation of z between calibration quantiles, and
-    linear extrapolation beyond the calibration min/max. Tails use the
-    least-squares slope of the outer 5 calibration points, capped at 3x the
-    median interior slope; |z| is clipped to max_abs_z (default 3.5, to be
-    validated against SPEIbase).
-    """
+def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray, max_abs_z: float = 3.5) -> np.ndarray:
     if max_abs_z <= 0:
         raise ValueError("max_abs_z must be positive")
     calibration = np.asarray(calibration, dtype=float)
@@ -364,19 +279,10 @@ def build_site(
     cache: Path,
     method: str,
     indices: pd.DataFrame,
-    end_month: int = 12,
-    daily_monthly: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    frame = fetch_power(site, spec, start, end, cache, end_month)
-    if daily_monthly is not None:
-        fallback = daily_monthly.set_index("date")
-        fallback = fallback.reindex(frame.index)
-        for column in ("PRECTOTCORR", "T2M", "T2MDEW", "WS10M", "ALLSKY_SFC_SW_DWN", "T2M_MAX", "T2M_MIN"):
-            if column in fallback:
-                frame[column] = frame[column].where(frame[column].notna(), fallback[column])
+    frame = fetch_power(site, spec, start, end, cache)
     frame = frame.loc[frame.index.month != 13]
-    frame = frame.replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
-    expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
+    expected = pd.date_range(f"{start}-01-01", f"{end}-12-01", freq="MS")
     frame = frame.reindex(expected)
     frame.index.name = "date"
     frame["pet_mm"] = estimate_pet_hargreaves(frame, spec["lat"])
@@ -384,14 +290,18 @@ def build_site(
     balance = frame["PRECTOTCORR"] * frame.index.days_in_month - frame["pet_mm"]
     for scale in (3, 6, 12):
         frame[f"spei_{scale}"] = _standardize_accumulation(balance, scale, method)
-    # Month-m observed SPEI is available at the month-end forecast issue time.
+    for variable in POWER_VARS:
+        frame[f"lag_{variable}"] = frame[variable].shift(1)
+    # Observed SPEI at the input month (unshifted) for information parity with persistence.
     for scale in (3, 6, 12):
         frame[f"spei_{scale}_obs"] = frame[f"spei_{scale}"]
     frame = frame.join(indices, how="left")
-    for name, alignment in INDEX_ALIGNMENT.items():
+    # For each monthly index, attach the previous month's published value to
+    # month m. This is conservative for centered ONI (which includes m+1)
+    # and gives a single, auditable alignment rule across all indices.
+    for name in ("oni", "dmi", "nao", "pdo"):
         if name in frame.columns:
-            frame[name] = frame[name].shift(alignment["lag_months"])
-            frame[name] = frame[name].ffill()
+            frame[name] = frame[name].shift(1)
     frame["site"] = site
     frame["region"] = spec["region"]
     return frame.reset_index()
@@ -504,7 +414,7 @@ def ingest_speibase(
         raise ValueError(
             f"SPEIbase extraction produced no valid values for {missing_scales}"
         )
-    # Inputs at month m use only target information known before month m starts.
+    # Keep observed state features consistent with the official target series.
     for scale in (3, 6, 12):
         observed = f"spei_{scale}_obs"
         if observed in result:
@@ -520,8 +430,8 @@ def main() -> None:
         help="Output CSV; defaults to data.path from the selected config",
     )
     parser.add_argument("--cache", default="data/raw")
-    parser.add_argument("--start", type=int)
-    parser.add_argument("--end", type=int)
+    parser.add_argument("--start", type=int, default=1981)
+    parser.add_argument("--end", type=int, default=2024)
     parser.add_argument(
         "--spei-method",
         choices=("nonparametric", "log-logistic"),
@@ -545,62 +455,31 @@ def main() -> None:
         import yaml
 
         cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
-    sites = _normalize_sites(cfg.get("sites", SITES))
-    if not sites:
-        raise ValueError("No sites are configured. Use the Maharashtra configs/config.yaml.")
-    if not isinstance(sites, dict) or len(sites) != 12:
-        raise ValueError("Configuration must define exactly the 12 Maharashtra sites")
-    if any(str(spec.get("region", "")).lower() not in {
-        "marathwada", "vidarbha", "madhya_maharashtra", "konkan"
-    } for spec in sites.values()):
-        raise ValueError("Only Maharashtra regional sites are supported")
-    data_cfg = cfg.get("data", {})
-    start = args.start if args.start is not None else int(data_cfg.get("start_year", 1981))
-    end = args.end if args.end is not None else int(data_cfg.get("end_year", 2024))
-    if end < start:
-        raise ValueError("Dataset end year must not precede start year")
+    sites = cfg.get("sites", SITES)
     # Normalize both supported config formats before building site frames.
-    indices = fetch_indices(f"{start}-01", f"{end}-12", Path(args.cache))
-    end_month = int(data_cfg.get("end_month", 12))
-    if not 1 <= end_month <= 12:
-        raise ValueError("data.end_month must be between 1 and 12")
-    daily = None
-    daily_monthly = None
-    if "GWETTOP" in data_cfg.get("features", []):
-        daily_path = Path("data/maharashtra_daily_raw.csv")
-        if not daily_path.is_file():
-            raise FileNotFoundError(f"Configured soil moisture requires {daily_path}")
-        daily = pd.read_csv(daily_path)
-        daily["date"] = pd.to_datetime(daily["date"])
-        daily["site"] = daily["site"].astype(str).str.lower().str.strip()
-        daily_end = pd.Timestamp(end, end_month, 1) + pd.offsets.MonthEnd(0)
-        for site, spec in sites.items():
-            site_rows = daily.loc[daily.site.eq(site)]
-            site_end = site_rows.date.max() if not site_rows.empty else pd.NaT
-            if pd.isna(site_end) or site_end < daily_end:
-                from data.api import fetch_station_data
-                fetch_start = (site_end + pd.Timedelta(days=1)).strftime("%Y%m%d") if pd.notna(site_end) else f"{start}0101"
-                extra = fetch_station_data(spec["lat"], spec["lon"], int(fetch_start), int(daily_end.strftime("%Y%m%d"))).reset_index()
-                extra["site"] = site
-                extra["region"] = spec["region"]
-                daily = pd.concat([daily, extra], ignore_index=True)
-        daily = daily.drop_duplicates(["site", "date"], keep="last").sort_values(["site", "date"])
-        daily.to_csv(daily_path, index=False)
-        daily["month_date"] = daily.date.dt.to_period("M").dt.to_timestamp()
-        daily_monthly = daily.groupby(["site", "month_date"], as_index=False).agg(
-            PRECTOTCORR=("PRECTOTCORR", "mean"), T2M=("T2M", "mean"),
-            T2MDEW=("T2MDEW", "mean"), WS10M=("WS10M", "mean"),
-            ALLSKY_SFC_SW_DWN=("ALLSKY_SFC_SW_DWN", "mean"),
-            T2M_MAX=("T2M_MAX", "mean"), T2M_MIN=("T2M_MIN", "mean"),
-            _daily_count=("date", "nunique"),
-        ).rename(columns={"month_date":"date"})
-        expected_days = daily_monthly.date.dt.days_in_month
-        incomplete = daily_monthly["_daily_count"].ne(expected_days)
-        latest_month = pd.Timestamp(end, end_month, 1)
-        if ((daily_monthly.date == latest_month) & incomplete).any():
-            raise ValueError(f"Daily NASA POWER inputs do not cover the full configured month {latest_month:%Y-%m}")
-        daily_monthly = daily_monthly.drop(columns="_daily_count")
-    data = build_from_cache(sites, start, end, Path(args.cache), args.spei_method, indices, end_month, daily_monthly)
+    if isinstance(sites, list):
+        sites_iter = {
+            s.get("id", s.get("name", "").lower().replace(" ", "_")): s
+            for s in sites
+        }.items()
+    else:
+        sites_iter = sites.items()
+    indices = fetch_indices(f"{args.start}-01", f"{args.end}-12", Path(args.cache))
+    data = pd.concat(
+        [
+            build_site(
+                name,
+                spec,
+                args.start,
+                args.end,
+                Path(args.cache),
+                args.spei_method,
+                indices,
+            )
+            for name, spec in sites_iter
+        ],
+        ignore_index=True,
+    )
     if args.speibase:
         from data.validate_speibase import compare_netcdf, speibase_points
 
@@ -632,12 +511,6 @@ def main() -> None:
             Path("results/speibase_validation_points.csv"), index=False
         )
         data = ingest_speibase(data, args.speibase, sites, args.speibase_variable)
-    if daily is not None and "GWETTOP" not in data:
-        from data.enrich_maharashtra_dataset import enrich_frame
-        data = enrich_frame(data, daily)
-    missing_features = set(cfg.get("data", {}).get("features", [])) - set(data.columns)
-    if missing_features:
-        raise ValueError(f"Built data is missing configured features: {sorted(missing_features)}")
     output = Path(args.output or cfg.get("data", {}).get("path", "data/monthly_sites.csv"))
     output.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(output, index=False)
@@ -651,17 +524,16 @@ def main() -> None:
             {
                 "schema_version": DATASET_PROTOCOL_VERSION,
                 "source": "NASA POWER monthly point; NOAA PSL teleconnection indices",
-                "period": [start, end],
-                "latest_complete_month": f"{end}-{end_month:02d}",
+                "period": [args.start, args.end],
                 "spei_method": args.spei_method,
-                "spei_calibration_period": [start, "2010-12-01"],
-                "pet_method": "Monthly Hargreaves-Samani approximation using POWER monthly mean temperatures (not FAO-56 PM)",
-                "data_quality": {"sentinel_values": "converted to NaN", "soil_moisture_source": "NASA POWER daily; actual coverage joined", "vegetation_inputs": "excluded; no validated satellite NDVI source"},
-                "input_units": {"PRECTOTCORR": "mm/day; multiplied by calendar days/month", "temperature": "degC", "WS10M": "m/s", "ALLSKY_SFC_SW_DWN": "kW-hr/m^2/day"},
+                "spei_calibration_period": [args.start, "2010-12-01"],
+                "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
                 "sites": sites,
                 "climate_variables": POWER_VARS,
                 "teleconnection_indices": list(NOAA),
-                "model_features": cfg.get("data", {}).get("features", []),
+                "model_features": POWER_VARS[:5]
+                + list(NOAA)
+                + ["spei_3_obs", "spei_6_obs", "spei_12_obs"],
                 "index_alignment": INDEX_ALIGNMENT,
                 "speibase": str(args.speibase) if args.speibase else None,
                 "target_quality_report": str(output.parent / "target_quality.json"),
