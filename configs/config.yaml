@@ -73,7 +73,7 @@ sites:
 
 data:
   path: data/maharashtra/monthly_sites.csv
-  start_year: 1990
+  start_year: 1981
   end_year: 2026
   end_month: 10
   target_source: local
@@ -96,6 +96,9 @@ data:
     - T2MDEW
     - WS10M
     - GWETTOP
+    - GWETROOT
+    - VPD
+    - T2M_RANGE
     - oni
     - dmi
     - nao
@@ -107,14 +110,16 @@ data:
     - spei_3
     - spei_6
     - spei_12
+    
   seq_len: 6
   forecast_steps: 4
-  train_split: "1990-2010"
-  val_split: "2011-2015"
+  train_split: "1981-2010"
+  val_split: "2012-2015"
   test_split: "2017-2025"
+
   split_boundaries:
     train_end: "2010-12-01"
-    val_start: "2011-01-01"
+    val_start: "2012-01-01"
     val_end: "2015-12-01"
     test_start: "2017-01-01"
     test_end: "2025-12-01"
@@ -123,7 +128,7 @@ model:
   encoder: lstm
   attention: shared
   heads: direct
-  input_dim: 12
+  input_dim: 15
   hidden_dim_1: 64
   hidden_dim_2: 32
   dropout: 0.2

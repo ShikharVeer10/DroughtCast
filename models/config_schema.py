@@ -1,5 +1,3 @@
-"""Configuration validation for the DroughtCast forecaster."""
-
 from __future__ import annotations
 from data.protocol import SPLITS
 from typing import Any
@@ -68,13 +66,3 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
     if quantiles is not None and (len(quantiles) != 3 or quantiles != sorted(quantiles) or any(not 0 < q < 1 for q in quantiles)):
         raise ValueError("model.quantiles must be three increasing probabilities in (0,1)")
     return cfg
-
-    b = data.get("split_boundaries")
-    if b is not None and {k: b.get(k) for k in SPLITS} != SPLITS:
-     raise ValueError(f"data.split_boundaries must equal protocol.SPLITS: {SPLITS}")
-    if data.get("start_year") is not None:
-        years = int(SPLITS["train_end"][:4]) - int(data["start_year"]) + 1
-    if years < 30:
-        raise ValueError(f"SPEI calibration baseline is {years} years (<30); use start_year <= 1981")
-    if model.get("quantiles") and float(cfg.get("training", {}).get("extreme_weight", 1.0)) != 1.0:
-        warnings.warn("extreme_weight != 1.0 biases quantile estimates toward the dry tail", stacklevel=2)

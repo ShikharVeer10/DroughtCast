@@ -14,10 +14,8 @@ import numpy as np
 import pandas as pd
 import requests
 
-from data.protocol import (
-    DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT, SPEI_CALIBRATION_END, SPLIT_BOUNDARIES,
-)
-from data.quality import target_quality_report, validate_target_quality
+from data.protocol import (DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT, SPEI_CALIBRATION_END, SPLIT_BOUNDARIES,)
+from data.quality import (target_quality_report,validate_target_quality,validate_site_table,)
 
 POWER_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
 POWER_VARS = [
@@ -28,6 +26,8 @@ POWER_VARS = [
     "ALLSKY_SFC_SW_DWN",
     "T2M_MAX",
     "T2M_MIN",
+    "GWETTOP",
+    "GWETROOT",
 ]
 NOAA = {
     "oni": "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt",
@@ -47,7 +47,6 @@ EXPECTED_MAHARASHTRA_SITES = {
 
 
 def _normalize_sites(sites: Any) -> dict[str, dict[str, Any]]:
-    """Normalize explicitly configured Maharashtra sites; never use global sites."""
     if sites is None:
         return {}
     if isinstance(sites, list):
@@ -75,12 +74,9 @@ def _validate_maharashtra_sites(sites: dict[str, dict[str, Any]]) -> None:
             raise ValueError(f"Missing finite coordinates for Maharashtra site {site}")
 
 
-def fetch_power(
-    site: str, spec: dict[str, Any], start: int, end: int, cache: Path,
-    end_month: int = 12, refresh: bool = False,
-) -> pd.DataFrame:
+def fetch_power(site: str, spec: dict[str, Any], start: int, end: int, cache: Path,end_month: int = 12, refresh: bool = False,) -> pd.DataFrame:
     cache.mkdir(parents=True, exist_ok=True)
-    path = cache / f"{site}_power_{start}_{end}.csv"
+    path = cache / (f"{site}_power_{start}_{end}_v{DATASET_PROTOCOL_VERSION}.csv")
     expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
     if path.exists() and not refresh:
         cached = pd.read_csv(path, index_col=0, parse_dates=True)
@@ -114,19 +110,24 @@ def fetch_power(
     try:
         parameters = body["properties"]["parameter"]
     except (KeyError, TypeError) as exc:
-        raise ValueError(
-            f"Unexpected NASA POWER response for {site}: {body!r}"
-        ) from exc
+        raise ValueError(f"Unexpected NASA POWER response for {site}: {body!r}") from exc
     if not all(name in parameters for name in POWER_VARS):
-        raise ValueError(
-            f"NASA POWER response missing expected variables: {list(parameters)}"
-        )
+        raise ValueError(f"NASA POWER response missing expected variables: {list(parameters)}")
     unit_table = body.get("parameters", {})
     expected_units = {
-        "PRECTOTCORR": {"mm/day"},
-        "T2M": {"c"}, "T2MDEW": {"c"}, "T2M_MAX": {"c"}, "T2M_MIN": {"c"},
-        "WS10M": {"m/s"},
-        "ALLSKY_SFC_SW_DWN": {"mj/m^2/day", "kwh/m^2/day", "kw-hr/m^2/day"},
+    "PRECTOTCORR": {"mm/day"},
+    "T2M": {"c"},
+    "T2MDEW": {"c"},
+    "T2M_MAX": {"c"},
+    "T2M_MIN": {"c"},
+    "WS10M": {"m/s"},
+    "ALLSKY_SFC_SW_DWN": {
+        "mj/m^2/day",
+        "kwh/m^2/day",
+        "kw-hr/m^2/day",
+    },
+    "GWETTOP": {"1"},
+    "GWETROOT": {"1"},
     }
     for variable, accepted in expected_units.items():
         reported = unit_table.get(variable, {})
@@ -365,18 +366,7 @@ def _standardize_accumulation(
     return result
 
 
-def build_site(
-    site: str,
-    spec: dict[str, Any],
-    start: int,
-    end: int,
-    cache: Path,
-    method: str,
-    indices: pd.DataFrame,
-    end_month: int = 12,
-    daily_monthly: pd.DataFrame | None = None,
-    refresh_power: bool = False,
-) -> pd.DataFrame:
+def build_site(site: str,spec: dict[str, Any],start: int,end: int,cache: Path,method: str,indices: pd.DataFrame,end_month: int = 12,daily_monthly: pd.DataFrame | None = None,refresh_power: bool = False,) -> pd.DataFrame:
     frame = fetch_power(site, spec, start, end, cache, end_month, refresh_power)
     frame = frame.loc[frame.index.month != 13]
     expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
@@ -387,20 +377,14 @@ def build_site(
             frame[column] = np.nan
     if daily_monthly is not None and site in daily_monthly.index.get_level_values("site"):
         daily_site = daily_monthly.xs(site, level="site").reindex(expected)
-        fallback_columns = [*POWER_VARS, "GWETTOP", "GWETROOT"]
+        fallback_columns = POWER_VARS
         for column in fallback_columns:
             if column in daily_site:
                 frame[column] = frame[column].where(frame[column].notna(), daily_site[column])
     for column in ("GWETTOP", "GWETROOT"):
         if column not in frame:
             frame[column] = np.nan
-    frame["T2M_RANGE"] = (frame["T2M_MAX"] - frame["T2M_MIN"]).clip(lower=0)
-    es = (
-        0.6108 * np.exp(17.27 * frame["T2M_MAX"] / (frame["T2M_MAX"] + 237.3))
-        + 0.6108 * np.exp(17.27 * frame["T2M_MIN"] / (frame["T2M_MIN"] + 237.3))
-    ) / 2
-    ea = 0.6108 * np.exp(17.27 * frame["T2MDEW"] / (frame["T2MDEW"] + 237.3))
-    frame["VPD"] = (es - ea).clip(lower=0)
+    frame = derive_biophysical_features(frame)
     frame.index.name = "date"
     frame["pet_mm"] = estimate_pet_hargreaves(frame, spec["lat"])
     # NASA POWER PRECTOTCORR is mm/day; convert to a monthly total.
@@ -438,6 +422,22 @@ def build_site(
     frame["region"] = spec["region"]
     return frame.reset_index()
 
+def derive_biophysical_features(frame: pd.DataFrame) -> pd.DataFrame:
+    result = frame.copy()
+    t_max = pd.to_numeric(result["T2M_MAX"], errors="coerce")
+    t_min = pd.to_numeric(result["T2M_MIN"], errors="coerce")
+    t_dew = pd.to_numeric(result["T2MDEW"], errors="coerce")
+
+    valid_temperature_range = (t_max.notna()& t_min.notna()& (t_max >= t_min))
+    result["T2M_RANGE"] = (t_max - t_min).where(valid_temperature_range)
+    es_max = 0.6108 * np.exp((17.27 * t_max) / (t_max + 237.3))
+    es_min = 0.6108 * np.exp((17.27 * t_min) / (t_min + 237.3))
+    es = (es_max + es_min) / 2.0
+    ea = 0.6108 * np.exp((17.27 * t_dew) / (t_dew + 237.3))
+    vpd = es - ea
+    result["VPD"] = vpd.where(valid_temperature_range & t_dew.notna()).clip(lower=0.0)
+
+    return result
 
 def load_daily_monthly(path: Path, end_year: int, end_month: int) -> pd.DataFrame | None:
     """Aggregate only complete daily months for use as a POWER monthly fallback."""
@@ -468,9 +468,7 @@ def load_daily_monthly(path: Path, end_year: int, end_month: int) -> pd.DataFram
     return aggregations
 
 
-def _resolve_data_variable(
-    dataset: Any, requested: str | None, lat_name: str, lon_name: str, time_name: str
-) -> str:
+def _resolve_data_variable(dataset: Any, requested: str | None, lat_name: str, lon_name: str, time_name: str) -> str:
     if requested:
         if requested not in dataset.data_vars:
             raise ValueError(
@@ -489,13 +487,8 @@ def _resolve_data_variable(
     return candidates[0]
 
 
-def ingest_speibase(
-    computed: pd.DataFrame,
-    directory: Path,
-    sites: dict[str, Any],
-    variable: str | None = None,
-) -> pd.DataFrame:
-    """Replace computed targets with nearest-cell official SPEIbase values."""
+def ingest_speibase(computed: pd.DataFrame,directory: Path,sites: dict[str, Any],variable: str | None = None,) -> pd.DataFrame:
+
     import xarray as xr
 
     reference = None
@@ -695,6 +688,7 @@ def main() -> None:
         actual = pd.DatetimeIndex(pd.to_datetime(group["date"]).sort_values())
         if not actual.equals(expected_dates):
             raise ValueError(f"Monthly coverage is incomplete for {site}")
+        feature_report = validate_site_table(data,configured_features,expected_sites=list(sites),strict=True,)
     if args.speibase:
         from data.validate_speibase import compare_netcdf, speibase_points
 
@@ -738,7 +732,7 @@ def main() -> None:
     )
     power_cache_provenance = {}
     for site in sites:
-        cache_sidecar = cache / f"{site}_power_{start}_{end}.metadata.json"
+        cache_sidecar = cache / (f"{site}_power_{start}_{end}_v{DATASET_PROTOCOL_VERSION}.metadata.json")
         if cache_sidecar.is_file():
             power_cache_provenance[site] = json.loads(
                 cache_sidecar.read_text(encoding="utf-8")
@@ -765,7 +759,7 @@ def main() -> None:
                 "split_boundaries": SPLIT_BOUNDARIES,
                 "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
                 "sites": sites,
-                "climate_variables": POWER_VARS + ["GWETTOP", "GWETROOT"],
+                "climate_variables": POWER_VARS,
                 "teleconnection_indices": list(NOAA),
                 "model_features": configured_features,
                 "index_alignment": INDEX_ALIGNMENT,
@@ -777,6 +771,11 @@ def main() -> None:
                     "PRECTOTCORR": "mm/day, converted to monthly total by multiplying calendar days",
                     "temperature": "degC", "WS10M": "m/s",
                     "ALLSKY_SFC_SW_DWN": "daily radiation energy; fresh response unit and legacy-cache verification status are recorded per site",
+                    "GWETTOP": "dimensionless soil wetness fraction",
+                    "GWETROOT": "dimensionless root-zone soil wetness fraction",
+                    "VPD": "kPa, estimated from monthly temperature extrema and dewpoint",
+                    "T2M_RANGE": "degC, monthly mean maximum minus monthly mean minimum temperature",
+                    "feature_validation": feature_report,
                 },
                 "dataset_built_utc": pd.Timestamp.now(tz="UTC").isoformat(),
                 "speibase": str(args.speibase or args.speibase_points) if (args.speibase or args.speibase_points) else None,

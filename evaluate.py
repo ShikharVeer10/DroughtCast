@@ -99,8 +99,9 @@ def main():
     artifact_dir.mkdir(parents=True, exist_ok=True)
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     dataset_protocol = validate_dataset_protocol(
-        Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
-        cfg["data"].get("target_source", "local"),
+    Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
+    cfg["data"].get("target_source", "local"),
+    cfg["data"]["features"],
     )
     data = load_site_table(
         cfg["data"]["path"],

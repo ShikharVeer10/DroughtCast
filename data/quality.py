@@ -10,34 +10,133 @@ import pandas as pd
 SCALES = ("spei_3", "spei_6", "spei_12")
 
 
-def validate_site_table(frame: pd.DataFrame, features: list[str], expected_sites: list[str] | None = None, *, strict: bool = False) -> dict:
-    """Validate monthly coverage, finite inputs, and usable targets before windows."""
-    needed = {"site", "date", *features, *SCALES}
-    missing = needed.difference(frame.columns)
-    if missing and strict:
+def validate_site_table(frame: pd.DataFrame,features: list[str],expected_sites: list[str] | None = None,*,strict: bool = False,) -> dict:
+
+    required = {
+        "site",
+        "date",
+        *features,
+        *SCALES,
+    }
+
+    missing = required.difference(frame.columns)
+
+    if missing:
         raise ValueError(f"Site table missing columns: {sorted(missing)}")
-    dates = pd.to_datetime(frame["date"])
-    if (dates.dt.day != 1).any() or frame.duplicated(["site", "date"]).any():
-        raise ValueError("Site table must have unique first-of-month observations")
+
+    dates = pd.to_datetime(
+        frame["date"],
+        errors="coerce",
+    )
+
+    if dates.isna().any():
+        raise ValueError("Invalid dates found in site table")
+
+    if (dates.dt.day != 1).any():
+        raise ValueError("All observations must use first-of-month dates")
+
+    if frame.duplicated(["site", "date"]).any():
+        raise ValueError("Duplicate site-month observations found")
+
     sites = sorted(frame["site"].astype(str).unique())
-    if strict and expected_sites is not None and set(sites) != set(expected_sites):
-        raise ValueError(f"Site set mismatch: expected={sorted(expected_sites)}, actual={sites}")
+
+    if strict and expected_sites is not None:
+        if set(sites) != set(expected_sites):
+            raise ValueError(
+                f"Site mismatch: expected={sorted(expected_sites)}, "
+                f"actual={sites}"
+            )
+
     report = {}
-    for site, group in frame.assign(date=dates).groupby("site"):
-        observed = pd.DatetimeIndex(group["date"].sort_values())
-        expected = pd.date_range(observed.min(), observed.max(), freq="MS")
-        if strict and not observed.equals(expected):
+
+    calibration_end = pd.Timestamp("2010-12-01")
+
+    for site, group in frame.assign(_date=dates).groupby("site"):
+
+        group = group.sort_values("_date")
+
+        group_dates = pd.to_datetime(group["_date"])
+
+        expected_dates = pd.date_range(
+            group_dates.min(),
+            group_dates.max(),
+            freq="MS",
+        )
+
+        actual_dates = pd.DatetimeIndex(group_dates)
+
+        if strict and not actual_dates.equals(expected_dates):
             raise ValueError(f"Monthly chronology has gaps for {site}")
-        inputs = group[features].apply(pd.to_numeric, errors="coerce")
-        nonfinite = ~np.isfinite(inputs.to_numpy())
-        target_valid = group[list(SCALES)].apply(pd.to_numeric, errors="coerce").notna().sum().to_dict()
-        report[str(site)] = {"observations": len(group), "input_nonfinite": int(nonfinite.sum()), "target_valid": {k: int(v) for k, v in target_valid.items()}}
-        # Missing input rows are reported and excluded by the window constructor;
-        # fail only if a required feature has no finite training observations.
-        if strict and any(not np.isfinite(inputs.loc[dates <= pd.Timestamp("2010-12-01"), col]).any() for col in features):
-            raise ValueError(f"Feature has no finite training observations for {site}")
-        if strict and any(v == 0 for v in target_valid.values()):
-            raise ValueError(f"No valid target observations for {site}: {target_valid}")
+
+        inputs = group[features].apply(
+            pd.to_numeric,
+            errors="coerce",
+        )
+
+        train_mask = group_dates <= calibration_end
+
+        feature_report = {}
+
+        for column in features:
+
+            values = inputs[column].to_numpy(dtype=float)
+
+            finite = np.isfinite(values)
+
+            training_values = inputs.loc[
+                train_mask,
+                column,
+            ].to_numpy(dtype=float)
+
+            finite_training = np.isfinite(
+                training_values
+            )
+
+            feature_report[column] = {
+                "missing": int((~finite).sum()),
+                "finite": int(finite.sum()),
+                "training_finite": int(
+                    finite_training.sum()
+                ),
+            }
+
+            if strict and not finite_training.any():
+                raise ValueError(
+                    f"{column} has no finite training observations "
+                    f"for site {site}"
+                )
+
+        for column in ("GWETTOP", "GWETROOT"):
+
+            values = inputs[column].dropna()
+
+            if (strict and ((values < 0) | (values > 1)).any()):
+                raise ValueError(f"{column} outside [0, 1] for site {site}")
+
+        for column in ("VPD", "T2M_RANGE", "PRECTOTCORR"):
+            values = inputs[column].dropna()
+
+            if strict and (values < 0).any():
+                raise ValueError(f"Negative {column} values for site {site}")
+
+        target_report = {}
+
+        for target in SCALES:
+
+            values = pd.to_numeric(group[target],errors="coerce",).to_numpy(dtype=float)
+            valid_count = int(np.isfinite(values).sum())
+
+            target_report[target] = valid_count
+
+            if strict and valid_count == 0:
+                raise ValueError(f"No valid {target} observations for {site}")
+
+        report[str(site)] = {
+            "observations": len(group),
+            "features": feature_report,
+            "targets": target_report,
+        }
+
     return report
 
 
@@ -101,31 +200,7 @@ def validate_target_quality(report: dict, fail_on_warning: bool = False) -> None
     if fail_on_warning and warnings:
         raise ValueError("Target quality validation failed: " + "; ".join(warnings))
 
-def validate_clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    df=df.replace([-999.0,-99.0,-9999,-32768],np.nan)
-    if "prectotcorr" in df.columns:
-        df.loc[df["prectotcorr"]<0, "prectotcorr"]=0.0
 
-    if all(c in df.columns for c in ["t2m_min","t2m","t2m_max"]):
-        invalid_temp=(df["t2m_min"]>df["t2m"]) | (df["t2m"]>df["t2m_max"])
-        df.loc[invalid_temp,["t2m","t2m_max","t2m_min"]]=np.nan
-
-
-    for soil_col in ["gwettop","gwetroot"]:
-        if soil_col in df.columns:
-            df[soil_col]=df[soil_col].clip(0.0,1.0)
-
-    #Vegetation index NDVI bounds [-0.2,1.0] and VCI Percentage bounds
-    if "ndvi" in df.columns:
-        df["ndvi"]=df["ndvi"].clip(-0.2,1.0)
-    if "vci" in df.columns:
-        df["vci"]=df["vci"].clip(0.0,100.0)
-
-    #Vapor pressure deficit
-    if "vpd" in df.columns:
-        df.loc[df["vpd"]<0,"vpd"]=0.0
-
-    return df
 
 
 def write_target_quality_report(csv_path: str | Path, output_path: str | Path, fail_on_warning: bool = False) -> dict:

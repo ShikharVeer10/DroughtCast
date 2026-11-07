@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -11,42 +10,40 @@ import torch
 
 from data.dataset import DroughtResearchDataset
 from data.preprocessing import ClimateNormalizer
-from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT, SPLITS, SPLIT_BOUNDARIES
+from data.protocol import DATASET_PROTOCOL_VERSION,INDEX_ALIGNMENT,SPLITS,SPLIT_BOUNDARIES,MODEL_FEATURES
+
 from data.quality import validate_site_table
-from data.protocol import SPLITS
+
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
-DEFAULT_FEATURES = [
-    "PRECTOTCORR",
-    "T2M",
-    "T2MDEW",
-    "WS10M",
-    "ALLSKY_SFC_SW_DWN",
-    "oni",
-    "dmi",
-    "nao",
-    "pdo",
-    "spei_3_obs",
-    "spei_6_obs",
-    "spei_12_obs",
-]
-def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json", target_source: str | None = None) -> dict:
+DEFAULT_FEATURES = list(MODEL_FEATURES)
+def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json",target_source: str | None = None,features: list[str] | None = None,) -> dict:
+
     metadata_path = Path(path)
+
     if not metadata_path.is_file():
         raise FileNotFoundError(
-            f"Dataset provenance is missing at {metadata_path}. Rebuild the monthly dataset with data/build_dataset.py."
+            f"Dataset provenance is missing at {metadata_path}. "
+            "Rebuild using data/build_dataset.py."
         )
+
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    if (
-        metadata.get("schema_version") != DATASET_PROTOCOL_VERSION
-        or metadata.get("index_alignment") != INDEX_ALIGNMENT
-        or metadata.get("split_boundaries") != SPLIT_BOUNDARIES
-        or (target_source is not None and metadata.get("target_source", "local") != target_source)
-    ):
-        raise RuntimeError(
-            f"Dataset at {metadata_path} predates the current teleconnection alignment. "
-            "Rebuild it with data/build_dataset.py before training or evaluation."
-        )
+
+    if metadata.get("schema_version") != DATASET_PROTOCOL_VERSION:
+        raise RuntimeError("Dataset schema version mismatch. Rebuild the dataset.")
+
+    if metadata.get("index_alignment") != INDEX_ALIGNMENT:
+        raise RuntimeError("Dataset index alignment mismatch. Rebuild the dataset.")
+
+    if metadata.get("split_boundaries") != SPLIT_BOUNDARIES:
+        raise RuntimeError("Dataset split boundaries mismatch. Rebuild the dataset.")
+
+    if (target_source is not None and metadata.get("target_source", "local") != target_source):
+        raise RuntimeError("Dataset target source does not match configuration.")
+
+    if (features is not None and metadata.get("model_features") != list(features)):
+        raise RuntimeError("Dataset model features do not match configuration. ""Rebuild the dataset.")
+
     return metadata
 
 
@@ -110,7 +107,7 @@ def load_site_table(
     if "region" in frame:
         region_alias = {"madhya maharashtra": "Madhya_Maharashtra"}
         frame["region"] = frame["region"].astype(str).replace(region_alias)
-    features = list(features or [c for c in DEFAULT_FEATURES if c in frame.columns])
+    features = (list(features)if features is not None else list(DEFAULT_FEATURES))
     if "month_sincos" in input_extras:
         features.extend(["month_sin", "month_cos"])
     if "water_balance" in input_extras:
@@ -179,11 +176,7 @@ def load_site_table(
             rows["site"] = site
         split_fn = split_for_date
         if split_config:
-            split_fn = lambda d: split_for_date(
-                d, split_config["train_end"], split_config["val_start"],
-                split_config["val_end"], split_config["test_start"],
-                split_config.get("test_end")
-            )
+            split_fn = lambda d: split_for_date(d,split_config,)
         split_rows = np.array([split_fn(d) for d in rows.index], dtype=object)
         region = (
             str(rows["region"].dropna().iloc[0])
@@ -196,7 +189,7 @@ def load_site_table(
         missing_counts = feature_frame.isna().sum()
         if missing_counts.any():
             print(f"Missing climate inputs before windowing: site={site}, " + ", ".join(f"{k}={int(v)}" for k,v in missing_counts.items() if v))
-        # Per-feature train-only moments, ignoring missing values.
+
         if not train_mask.any():
             raise ValueError(f"Site {site} has no training observations")
         normalizer = (
@@ -216,12 +209,8 @@ def load_site_table(
             if "PRECTOTCORR" in rows
             else None
         )
-        pet = (
-            pd.to_numeric(rows["pet_mm"], errors="coerce") if "pet_mm" in rows else None
-        )
-        train_precip = (
-            precipitation[train_mask].mean() if precipitation is not None else np.nan
-        )
+        pet = (pd.to_numeric(rows["pet_mm"], errors="coerce") if "pet_mm" in rows else None)
+        train_precip = (precipitation[train_mask].mean() if precipitation is not None else np.nan)
         train_pet = pet[train_mask].mean() if pet is not None else np.nan
         aridity = (
             float(train_precip / train_pet)
@@ -339,12 +328,3 @@ def load_site_table(
     return result
 
 
-def load_era_5_and_spei_data(
-    inputs_csv_path: str,
-    targets_nc_path: str,
-    seq_len: int = 6,
-    forecast_steps: int = 4,
-):
-    raise RuntimeError(
-        "Legacy length-truncating NetCDF loader removed. Build data/monthly_sites.csv with data/build_dataset.py and use load_site_table()."
-    )

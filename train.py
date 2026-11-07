@@ -181,8 +181,9 @@ def main():
             f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first."
         )
     validate_dataset_protocol(
-        Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
-        cfg["data"].get("target_source", "local"),
+    Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
+    cfg["data"].get("target_source", "local"),
+    cfg["data"]["features"],
     )
     data = load_site_table(
         cfg["data"]["path"],

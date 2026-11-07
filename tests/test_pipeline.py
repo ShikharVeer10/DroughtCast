@@ -154,3 +154,37 @@ def test_model_separate_encoders_variant():
     assert all(value.shape == (2, 2) for value in prediction.values())
     assert aux["attention"].shape == (2, 3, 5, 1)
     assert torch.allclose(aux["attention"].sum(dim=2), torch.ones(2, 3, 1), atol=1e-5)
+
+def test_loader_accepts_explicit_split_configuration(tmp_path):
+
+    dates = pd.date_range("2009-01-01","2010-12-01",freq="MS",)
+
+    frame = pd.DataFrame({
+        "date": dates,
+        "site": "x",
+        "f": np.arange(len(dates), dtype=float),
+        "spei_3": np.arange(len(dates), dtype=float),
+        "spei_6": np.arange(len(dates), dtype=float),
+        "spei_12": np.arange(len(dates), dtype=float),
+    })
+
+    path = tmp_path / "monthly.csv"
+    frame.to_csv(path, index=False)
+
+    splits = {
+        "train_end": "2010-12-01",
+        "val_start": "2012-01-01",
+        "val_end": "2015-12-01",
+        "test_start": "2017-01-01",
+        "test_end": "2025-12-01",
+    }
+
+    data = load_site_table(
+        path,
+        features=["f"],
+        seq_len=3,
+        forecast_steps=2,
+        split_config=splits,
+    )
+
+    assert len(data["train"]) > 0
