@@ -8,16 +8,14 @@ import warnings
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
-
+from math import gamma as _gamma
+from scipy.stats import norm
 import numpy as np
 import pandas as pd
 import requests
 
 from data.protocol import (
-    DATASET_PROTOCOL_VERSION,
-    INDEX_ALIGNMENT,
-    SPEI_CALIBRATION_END,
-    SPLIT_BOUNDARIES,
+    DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT, SPEI_CALIBRATION_END, SPLIT_BOUNDARIES,
 )
 from data.quality import target_quality_report, validate_target_quality
 
@@ -793,3 +791,49 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+def _loglogistic_z_scores(values, calibration, max_abs_z=3.5):
+    cal = np.sort(np.asarray(calibration, dtype=float)); cal = cal[np.isfinite(cal)]
+    n = len(cal)
+    if n < 10:
+        raise ValueError("log-logistic SPEI needs at least 10 calibration samples")
+    f = (np.arange(1, n + 1) - 0.35) / n
+    w0, w1, w2 = (np.mean((1.0 - f) ** s * cal) for s in (0, 1, 2))
+    denom = 6.0 * w1 - w0 - 6.0 * w2
+    beta = (2.0 * w1 - w0) / denom if denom != 0 else np.nan
+    if not np.isfinite(beta) or beta <= 1.0:
+        raise ValueError("log-logistic fit failed (beta <= 1); use method='nonparametric'")
+    g = _gamma(1.0 + 1.0 / beta) * _gamma(1.0 - 1.0 / beta)
+    alpha = (w0 - 2.0 * w1) * beta / g
+    gamma0 = w0 - alpha * g
+    x = np.asarray(values, dtype=float)
+    cdf = np.full(x.shape, np.nan)
+    ok = np.isfinite(x) & (x > gamma0)
+    cdf[ok] = 1.0 / (1.0 + (alpha / (x[ok] - gamma0)) ** beta)
+    cdf[np.isfinite(x) & (x <= gamma0)] = 1e-6
+    return np.clip(norm.ppf(np.clip(cdf, 1e-6, 1 - 1e-6)), -max_abs_z, max_abs_z)
+
+def _extraterrestrial_radiation(lat_deg, doy):
+    phi = np.deg2rad(lat_deg); dr = 1 + 0.033 * np.cos(2 * np.pi * doy / 365.0)
+    delta = 0.409 * np.sin(2 * np.pi * doy / 365.0 - 1.39)
+    ws = np.arccos(np.clip(-np.tan(phi) * np.tan(delta), -1, 1))
+    return (24 * 60 / np.pi) * 0.0820 * dr * (ws * np.sin(phi) * np.sin(delta) + np.cos(phi) * np.cos(delta) * np.sin(ws))
+
+def penman_monteith_monthly_pet(daily, lat, elevation_m, rs_units):
+    if rs_units not in {"MJ/m2/day", "kWh/m2/day"}:
+        raise ValueError("rs_units must be 'MJ/m2/day' or 'kWh/m2/day'")
+    rs = daily["ALLSKY_SFC_SW_DWN"].astype(float) * (3.6 if rs_units == "kWh/m2/day" else 1.0)
+    tmax, tmin, tdew = (daily[c].astype(float) for c in ("T2M_MAX", "T2M_MIN", "T2MDEW"))
+    tmean = (tmax + tmin) / 2.0
+    e0 = lambda t: 0.6108 * np.exp(17.27 * t / (t + 237.3))
+    es, ea = (e0(tmax) + e0(tmin)) / 2.0, e0(tdew)
+    delta = 4098.0 * e0(tmean) / (tmean + 237.3) ** 2
+    gamma = 0.000665 * 101.3 * ((293.0 - 0.0065 * elevation_m) / 293.0) ** 5.26
+    u2 = daily["WS10M"].astype(float) * 4.87 / np.log(67.8 * 10.0 - 5.42)
+    ra = _extraterrestrial_radiation(lat, daily.index.dayofyear.to_numpy())
+    rso = (0.75 + 2e-5 * elevation_m) * ra
+    ratio = np.clip(rs / np.maximum(rso, 1e-6), 0.3, 1.0)
+    rnl = 4.903e-9 * (((tmax + 273.16) ** 4 + (tmin + 273.16) ** 4) / 2.0) * (0.34 - 0.14 * np.sqrt(np.maximum(ea, 0))) * (1.35 * ratio - 0.35)
+    rn = 0.77 * rs - rnl
+    et0 = (0.408 * delta * rn + gamma * 900.0 / (tmean + 273.0) * u2 * (es - ea)) / (delta + gamma * (1.0 + 0.34 * u2))
+    return np.maximum(et0, 0.0).resample("MS").sum()
