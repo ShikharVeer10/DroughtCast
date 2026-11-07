@@ -1,5 +1,5 @@
 from __future__ import annotations
-from data.protocol import SPLITS
+
 from typing import Any
 
 ALLOWED_TOP = {"experiment", "sites", "data", "model", "training"}

@@ -1,0 +1,56 @@
+{
+  "status": "blocked_reference_files_unavailable",
+  "verified_documentation": {
+    "version": "SPEIbase v2.12.0",
+    "input_product": "CRU TS 4.10",
+    "documented_coverage": [
+      "1901-01",
+      "2025-12"
+    ],
+    "documented_resolution": "0.5 degree; monthly",
+    "expected_scales": [
+      3,
+      6,
+      12
+    ],
+    "expected_netcdf_names_per_official_generation_code": [
+      "spei03.nc",
+      "spei06.nc",
+      "spei12.nc"
+    ],
+    "source_input_files": [
+      "cru_ts4.10.1901.2025.pre.dat.nc",
+      "cru_ts4.10.1901.2025.pet.dat.nc"
+    ],
+    "source_input_units_assumed_by_generation_code": {
+      "pre": "monthly precipitation amount",
+      "pet": "daily PET multiplied by days per month"
+    },
+    "expected_variable": "spei (specified by the official generation code; v2.12 file itself unavailable for inspection)",
+    "units": "1 (dimensionless, specified by the official generation code; v2.12 file itself unavailable for inspection)",
+    "missing_value_encoding": "1e30 in official NetCDF generation code; v2.12 file itself unavailable for inspection",
+    "calculation": "Official generation code uses CRU precipitation and PET, then SPEI::spei at each scale. Package default is log-logistic fitted by unbiased PWM; default reference period is the entire supplied series.",
+    "documentation_url": "https://github.com/sbegueria/SPEIbase/blob/master/README.md",
+    "generation_code_url": "https://github.com/sbegueria/SPEIbase/blob/master/R/computeSPEI.R",
+    "function_code_url": "https://github.com/sbegueria/SPEIbase/blob/master/R/functions.R"
+  },
+  "source_probe": {
+    "checked_utc": "2026-11-07T00:00:00+00:00",
+    "files": {
+      "spei03.nc": {
+        "url": "https://example.invalid/spei03.nc",
+        "http_status": 404,
+        "available": false
+      }
+    }
+  },
+  "existing_v211_artifact": "results/maharashtra/speibase_validation/matched_monthly_points.csv",
+  "v211_source_url": "https://spei.csic.es/spei_database_2_11/nc/",
+  "v212_downloaded": false,
+  "v212_extraction_performed": false,
+  "reason": "The v2.12 release is described in the official repository, but the expected official NetCDF endpoints return HTTP 404. No values were substituted from v2.11.",
+  "outputs": {
+    "v212_site_month": "C:\\Users\\shikh\\DroughtCast\\.pytest_tmp_spei_phase12_full2_20261107\\test_v212_unavailable_metadata0\\speibase_v212_site_month.csv",
+    "version_comparison": "C:\\Users\\shikh\\DroughtCast\\.pytest_tmp_spei_phase12_full2_20261107\\test_v212_unavailable_metadata0\\speibase_version_comparison.csv"
+  }
+}

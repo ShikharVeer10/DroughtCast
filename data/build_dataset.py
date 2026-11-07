@@ -5,17 +5,27 @@ import hashlib
 import json
 import re
 import warnings
+from math import gamma as _gamma
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
-from math import gamma as _gamma
-from scipy.stats import norm
+
 import numpy as np
 import pandas as pd
 import requests
+from scipy.stats import norm
 
-from data.protocol import (DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT, SPEI_CALIBRATION_END, SPLIT_BOUNDARIES,)
-from data.quality import (target_quality_report,validate_target_quality,validate_site_table,)
+from data.protocol import (
+    DATASET_PROTOCOL_VERSION,
+    INDEX_ALIGNMENT,
+    SPEI_CALIBRATION_END,
+    SPLIT_BOUNDARIES,
+)
+from data.quality import (
+    target_quality_report,
+    validate_site_table,
+    validate_target_quality,
+)
 
 POWER_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
 POWER_VARS = [
@@ -55,7 +65,7 @@ def _normalize_sites(sites: Any) -> dict[str, dict[str, Any]]:
             for s in sites
         }
     if not isinstance(sites, dict):
-        raise ValueError("Configured sites must be a mapping or list")
+        raise TypeError("Configured sites must be a mapping or list")
     return {str(name).strip().lower(): spec for name, spec in sites.items()}
 
 
@@ -78,20 +88,22 @@ def fetch_power(site: str, spec: dict[str, Any], start: int, end: int, cache: Pa
     cache.mkdir(parents=True, exist_ok=True)
     path = cache / (f"{site}_power_{start}_{end}_v{DATASET_PROTOCOL_VERSION}.csv")
     expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
-    if path.exists() and not refresh:
-        cached = pd.read_csv(path, index_col=0, parse_dates=True)
-        cached = cached.apply(pd.to_numeric, errors="coerce").replace(
-            [-999.0, -99.0, -9999.0, -32768.0], np.nan
-        )
-        if set(POWER_VARS).issubset(cached.columns) and expected.isin(cached.index).all():
-            cached = cached.loc[expected[0]:expected[-1]].reindex(expected)
-            sidecar = path.with_suffix(".metadata.json")
-            if not sidecar.exists():
-                sidecar.write_text(json.dumps({
-                    "units": {}, "unit_validation": "not verified for legacy cache",
-                    "retrieved_utc": None,
-                }, indent=2), encoding="utf-8")
-            return cached
+    cache_candidates = [path, cache / f"{site}_power_{start}_{end}.csv"]
+    if not refresh:
+        for candidate in cache_candidates:
+            if not candidate.exists():
+                continue
+            cached = pd.read_csv(candidate, index_col=0, parse_dates=True)
+            cached = cached.apply(pd.to_numeric, errors="coerce").replace(
+                [-999.0, -99.0, -9999.0, -32768.0], np.nan
+            )
+            sidecar = candidate.with_suffix(".metadata.json")
+            verified = False
+            if sidecar.exists():
+                source_meta = json.loads(sidecar.read_text(encoding="utf-8"))
+                verified = source_meta.get("unit_validation") == "passed"
+            if verified and set(POWER_VARS).issubset(cached.columns) and expected.isin(cached.index).all():
+                return cached.loc[expected[0]:expected[-1]].reindex(expected)
     response = requests.get(
         POWER_URL,
         params={
@@ -212,6 +224,51 @@ def _parse_noaa_text(name: str, text: str) -> pd.Series:
     return pd.Series(rows, name=name).sort_index()
 
 
+def align_index_with_provenance(
+    name: str, observations: pd.Series, issue_dates: pd.DatetimeIndex
+) -> pd.DataFrame:
+    """Align a monthly index to month-end issues and retain source provenance.
+
+    Lag and age are calendar-month quantities. Values become eligible at
+    source_month + publication_lag_months, then may be carried only until the
+    per-index max_age_months limit. Source/effective months are audit fields,
+    never model features.
+    """
+    if name not in INDEX_ALIGNMENT:
+        raise ValueError(f"No temporal-alignment policy configured for {name}")
+    policy = INDEX_ALIGNMENT[name]
+    source = pd.to_numeric(observations, errors="coerce").dropna().copy()
+    source.index = pd.DatetimeIndex(source.index).to_period("M").to_timestamp()
+    source = source[~source.index.duplicated(keep="last")].sort_index()
+    lag = int(policy["publication_lag_months"])
+    max_age = int(policy["max_age_months"])
+    effective_dates = source.index + pd.offsets.MonthBegin(lag)
+    # MonthBegin(1) advances to next month; lag zero means the source month.
+    if lag == 0:
+        effective_dates = source.index
+    timeline = pd.DataFrame(
+        {"value": source.to_numpy(), "source_month": source.index},
+        index=pd.DatetimeIndex(effective_dates),
+    ).sort_index()
+    timeline = timeline[~timeline.index.duplicated(keep="last")]
+    issues = pd.DatetimeIndex(issue_dates).to_period("M").to_timestamp()
+    aligned = timeline.reindex(timeline.index.union(issues)).sort_index().ffill().reindex(issues)
+    source_months = pd.to_datetime(aligned["source_month"])
+    age = (issues.year - source_months.dt.year) * 12 + (issues.month - source_months.dt.month)
+    missing_source = source_months.isna()
+    stale = (~missing_source) & (age > max_age)
+    aligned["observation_age_months"] = age.where(~missing_source).astype(float)
+    aligned["is_stale"] = stale.astype(bool)
+    aligned["is_missing"] = (missing_source | stale).astype(bool)
+    aligned["value"] = aligned["value"].where(~stale)
+    aligned["effective_month"] = source_months + pd.offsets.MonthBegin(lag)
+    if lag == 0:
+        aligned["effective_month"] = source_months
+    aligned.loc[missing_source, ["source_month", "effective_month"]] = pd.NaT
+    aligned.index = issue_dates
+    return aligned
+
+
 def fetch_indices(start: str, end: str, cache: Path, refresh: bool = False) -> pd.DataFrame:
     columns = []
     provenance = {}
@@ -244,8 +301,19 @@ def fetch_indices(start: str, end: str, cache: Path, refresh: bool = False) -> p
                 "retrieval_date": None,
                 "unit_validation": "not applicable for index; legacy cache retrieval is unknown",
             }, indent=2), encoding="utf-8")
-        provenance[name] = json.loads(sidecar.read_text(encoding="utf-8"))
-        columns.append(_parse_noaa_text(name, text))
+        source_meta = json.loads(sidecar.read_text(encoding="utf-8"))
+        parsed = _parse_noaa_text(name, text)
+        source_meta.update({
+            "source_url": url,
+            "original_source_file": str(path),
+            "latest_observation_month": parsed.dropna().index.max().strftime("%Y-%m"),
+            "units": INDEX_ALIGNMENT[name]["units"],
+            "parsing_method": "ONI CPC season label mapped to season-ending month; PSL year row parsed as Jan-Dec; sentinel values rejected",
+            "publication_lag_months_assumed": INDEX_ALIGNMENT[name]["publication_lag_months"],
+            "availability_lag_documentation": "No machine-readable publication timestamps in source; conservative lag is an explicit protocol assumption.",
+        })
+        provenance[name] = source_meta
+        columns.append(parsed)
     index = pd.concat(columns, axis=1, sort=True).sort_index()
     result = index.loc[start:end]
     result.attrs["provenance"] = provenance
@@ -333,14 +401,20 @@ def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray, max_abs
 
 
 def _standardize_accumulation(
-    balance: pd.Series, scale: int, method: str, calibration_end: str = SPEI_CALIBRATION_END
+    balance: pd.Series,
+    scale: int,
+    method: str,
+    calibration_end: str = SPEI_CALIBRATION_END,
+    calibration_start: str | None = None,
 ) -> pd.Series:
     accum = balance.rolling(scale, min_periods=scale).sum()
     result = pd.Series(np.nan, index=balance.index, dtype=float)
     calibration_end = pd.Timestamp(calibration_end)
     for month in range(1, 13):
         subset = accum.loc[
-            (accum.index.month == month) & (accum.index <= calibration_end)
+            (accum.index.month == month)
+            & (accum.index <= calibration_end)
+            & (True if calibration_start is None else accum.index >= pd.Timestamp(calibration_start))
         ].dropna()
         values = accum.loc[accum.index.month == month]
         if len(subset) < 20:
@@ -366,7 +440,7 @@ def _standardize_accumulation(
     return result
 
 
-def build_site(site: str,spec: dict[str, Any],start: int,end: int,cache: Path,method: str,indices: pd.DataFrame,end_month: int = 12,daily_monthly: pd.DataFrame | None = None,refresh_power: bool = False,) -> pd.DataFrame:
+def build_site(site: str,spec: dict[str, Any],start: int,end: int,cache: Path,method: str,indices: pd.DataFrame,end_month: int = 12,daily_monthly: pd.DataFrame | None = None,refresh_power: bool = False,calibration_start: int | None = None,calibration_cache: Path | None = None,) -> pd.DataFrame:
     frame = fetch_power(site, spec, start, end, cache, end_month, refresh_power)
     frame = frame.loc[frame.index.month != 13]
     expected = pd.date_range(f"{start}-01-01", f"{end}-{end_month:02d}-01", freq="MS")
@@ -389,35 +463,48 @@ def build_site(site: str,spec: dict[str, Any],start: int,end: int,cache: Path,me
     frame["pet_mm"] = estimate_pet_hargreaves(frame, spec["lat"])
     # NASA POWER PRECTOTCORR is mm/day; convert to a monthly total.
     balance = frame["PRECTOTCORR"] * frame.index.days_in_month - frame["pet_mm"]
+    calibration_balance = balance
+    calibration_start_date = None
+    if calibration_start is not None and calibration_start < start:
+        if calibration_cache is None:
+            raise ValueError("A separate calibration cache is required for pre-dataset history")
+        history = fetch_power(site, spec, calibration_start, end, calibration_cache, end_month)
+        history = history.replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
+        history["pet_mm"] = estimate_pet_hargreaves(history, spec["lat"])
+        history_balance = history["PRECTOTCORR"] * history.index.days_in_month - history["pet_mm"]
+        prehistory = history_balance.loc[history_balance.index < frame.index.min()]
+        calibration_balance = pd.concat([prehistory, balance]).sort_index()
+        calibration_start_date = f"{calibration_start}-01-01"
     for scale in (3, 6, 12):
-        frame[f"spei_{scale}"] = _standardize_accumulation(balance, scale, method)
+        frame[f"spei_{scale}"] = _standardize_accumulation(
+            calibration_balance,
+            scale,
+            method,
+            calibration_start=(calibration_start_date or f"{start}-01-01"),
+        ).reindex(frame.index)
     for variable in POWER_VARS:
         frame[f"lag_{variable}"] = frame[variable].shift(1)
     # Observed SPEI at the input month (unshifted) for information parity with persistence.
     for scale in (3, 6, 12):
         frame[f"spei_{scale}_obs"] = frame[f"spei_{scale}"]
-    max_stale = int(INDEX_ALIGNMENT.get("max_staleness_months", 12))
     for name in ("oni", "dmi", "nao", "pdo"):
         if name not in indices:
             frame[name] = np.nan
+            frame[f"{name}_source_month"] = None
+            frame[f"{name}_effective_month"] = None
+            frame[f"{name}_observation_age_months"] = np.nan
+            frame[f"{name}_is_stale"] = False
+            frame[f"{name}_is_missing"] = True
             continue
-        lag = int(INDEX_ALIGNMENT[name]["lag_months"])
-        # Track dates only where this specific index has a real observation.
-        # The NOAA series are concatenated on a shared calendar, so using the
-        # union index here falsely made missing PDO months look newly observed.
-        observed = indices[name].dropna()
-        source_values = observed.reindex(frame.index).shift(lag)
-        source_dates = pd.Series(observed.index, index=observed.index).reindex(frame.index).shift(lag)
-        source_values = source_values.ffill()
-        source_dates = source_dates.ffill()
-        age = (frame.index.year - pd.DatetimeIndex(source_dates).year) * 12 + (
-            frame.index.month - pd.DatetimeIndex(source_dates).month
-        )
-        stale = pd.isna(source_dates.to_numpy()) | (age > max_stale)
-        frame[name] = source_values.where(~stale)
-        frame[f"{name}_source_month"] = pd.DatetimeIndex(source_dates).strftime("%Y-%m")
-        frame.loc[stale, f"{name}_source_month"] = None
-        frame[f"{name}_staleness_months"] = np.where(stale, np.nan, age)
+        aligned = align_index_with_provenance(name, indices[name], frame.index)
+        frame[name] = aligned["value"].to_numpy()
+        for field in ("source_month", "effective_month"):
+            frame[f"{name}_{field}"] = pd.to_datetime(aligned[field]).dt.strftime("%Y-%m").to_numpy()
+        frame[f"{name}_observation_age_months"] = aligned["observation_age_months"].to_numpy()
+        frame[f"{name}_is_stale"] = aligned["is_stale"].to_numpy(dtype=bool)
+        frame[f"{name}_is_missing"] = aligned["is_missing"].to_numpy(dtype=bool)
+        # Backward compatible audit alias; never a model input.
+        frame[f"{name}_staleness_months"] = frame[f"{name}_observation_age_months"]
     frame["site"] = site
     frame["region"] = spec["region"]
     return frame.reset_index()
@@ -609,6 +696,8 @@ def main() -> None:
     parser.add_argument("--start", type=int)
     parser.add_argument("--end", type=int)
     parser.add_argument("--end-month", type=int)
+    parser.add_argument("--spei-calibration-start", type=int)
+    parser.add_argument("--calibration-cache", type=Path)
     parser.add_argument("--refresh-indices", action="store_true")
     parser.add_argument("--refresh-power", action="store_true")
     parser.add_argument(
@@ -641,13 +730,15 @@ def main() -> None:
     sites = _normalize_sites(cfg.get("sites"))
     _validate_maharashtra_sites(sites)
     data_cfg = cfg.get("data", {})
-    start = args.start if args.start is not None else int(data_cfg.get("start_year", 1981))
+    start = args.start if args.start is not None else int(data_cfg.get("start_year", 1990))
     end = args.end if args.end is not None else int(data_cfg.get("end_year", 2024))
     end_month = args.end_month if args.end_month is not None else int(data_cfg.get("end_month", 12))
-    cal_years = pd.Timestamp(SPEI_CALIBRATION_END).year - start + 1
+    calibration_start = args.spei_calibration_start if args.spei_calibration_start is not None else int(data_cfg.get("spei_calibration_start_year", start))
+    calibration_cache = args.calibration_cache or Path(data_cfg.get("spei_calibration_cache", "data/raw"))
+    cal_years = pd.Timestamp(SPEI_CALIBRATION_END).year - calibration_start + 1
     if cal_years < 30:
         warnings.warn(
-            f"SPEI calibration baseline is {cal_years} years (<30); use --start 1981 or justify.",
+            f"SPEI calibration baseline is {cal_years} years (<30); set --spei-calibration-start to a supported historical year or justify.",
             stacklevel=2,
         )
     if end < start or not 1 <= end_month <= 12:
@@ -674,6 +765,8 @@ def main() -> None:
                 end_month,
                 daily_monthly,
                 args.refresh_power,
+                calibration_start,
+                calibration_cache,
             )
             for name, spec in sites.items()
         ],
@@ -725,6 +818,36 @@ def main() -> None:
         data = ingest_speibase_points(data, args.speibase_points)
     output.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(output, index=False)
+    index_audit = {}
+    for name in NOAA:
+        source_col = f"{name}_source_month"
+        age_col = f"{name}_observation_age_months"
+        stale_col = f"{name}_is_stale"
+        missing_col = f"{name}_is_missing"
+        usable = data[name].notna()
+        index_audit[name] = {
+            "policy": INDEX_ALIGNMENT[name],
+            "latest_source_month_in_dataset": data[source_col].dropna().max(),
+            "usable_rows": int(usable.sum()),
+            "carried_forward_rows": int((usable & (data[age_col] > INDEX_ALIGNMENT[name]["publication_lag_months"])).sum()),
+            "stale_rows_rejected": int(data[stale_col].sum()),
+            "missing_rows": int(data[missing_col].sum()),
+            "october_2026_by_site": {},
+        }
+        october = data[pd.to_datetime(data["date"]).eq(pd.Timestamp("2026-10-01"))]
+        for site, row in october.set_index("site").iterrows():
+            index_audit[name]["october_2026_by_site"][site] = {
+                "source_month": row[source_col],
+                "effective_month": row[f"{name}_effective_month"],
+                "observation_age_months": None if pd.isna(row[age_col]) else int(row[age_col]),
+                "is_stale": bool(row[stale_col]),
+                "is_missing": bool(row[missing_col]),
+                "status": "Stale" if row[stale_col] else ("Missing" if row[missing_col] else "Available"),
+                "value": None if pd.isna(row[name]) else float(row[name]),
+            }
+    (output.parent / "index_provenance_audit.json").write_text(
+        json.dumps(index_audit, indent=2, allow_nan=False), encoding="utf-8"
+    )
     quality = target_quality_report(data)
     validate_target_quality(quality)
     (output.parent / "target_quality.json").write_text(
@@ -732,11 +855,16 @@ def main() -> None:
     )
     power_cache_provenance = {}
     for site in sites:
-        cache_sidecar = cache / (f"{site}_power_{start}_{end}_v{DATASET_PROTOCOL_VERSION}.metadata.json")
-        if cache_sidecar.is_file():
+        sidecars = [
+            cache / f"{site}_power_{start}_{end}_v{DATASET_PROTOCOL_VERSION}.metadata.json",
+            cache / f"{site}_power_{start}_{end}.metadata.json",
+        ]
+        cache_sidecar = next((candidate for candidate in sidecars if candidate.is_file()), None)
+        if cache_sidecar is not None:
             power_cache_provenance[site] = json.loads(
                 cache_sidecar.read_text(encoding="utf-8")
             )
+            power_cache_provenance[site]["cache_file"] = str(cache_sidecar.with_suffix(".csv"))
         else:
             power_cache_provenance[site] = {
                 "unit_validation": "not verified; cache sidecar absent",
@@ -754,7 +882,7 @@ def main() -> None:
                 "period": [start, end],
                 "latest_complete_month": f"{end}-{end_month:02d}",
                 "spei_method": args.spei_method,
-                "spei_calibration_period": [start, SPEI_CALIBRATION_END],
+                "spei_calibration_period": [calibration_start, SPEI_CALIBRATION_END],
                 "target_source": target_source,
                 "split_boundaries": SPLIT_BOUNDARIES,
                 "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
@@ -764,8 +892,9 @@ def main() -> None:
                 "model_features": configured_features,
                 "index_alignment": INDEX_ALIGNMENT,
                 "index_last_source_month": {name: str(indices[name].dropna().index.max().date()) if name in indices and indices[name].notna().any() else None for name in NOAA},
-                "index_max_staleness_months": INDEX_ALIGNMENT.get("max_staleness_months", 12),
+                "index_max_age_months": {name: policy["max_age_months"] for name, policy in INDEX_ALIGNMENT.items() if name in NOAA},
                 "index_cache_provenance": indices.attrs.get("provenance", {}),
+                "index_provenance_audit": str(output.parent / "index_provenance_audit.json"),
                 "power_cache_provenance": power_cache_provenance,
                 "input_units": {
                     "PRECTOTCORR": "mm/day, converted to monthly total by multiplying calendar days",

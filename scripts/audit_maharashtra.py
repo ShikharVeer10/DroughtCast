@@ -126,21 +126,24 @@ They are historical artifacts and are not rewritten or reinterpreted here.
     lines = [
         "# Maharashtra results summary",
         "",
-        "All figures below are read from `results/maharashtra/site_skill_t4.csv`; "
-        "positive skill means lower RMSE than persistence at T+4.",
+        (
+            "All figures below are read from `results/maharashtra/site_skill_t4.csv`; "
+            "positive skill means lower RMSE than persistence at T+4."
+        ),
         "",
     ]
     for scale, row in grouped.iterrows():
         lines.append(
-            f"* **{scale} T+4:** beats persistence at {int(row['sum'])} of "
-            f"{int(row['count'])} site comparisons."
+            f"* **{scale} T+4:** beats persistence at {int(row['sum'])} of {int(row['count'])} site comparisons."
         )
     lines.extend(
         [
             "",
-            "This is not a claim of overall superiority. Lead- and scale-specific "
-            "RMSE/MAE/R2, bootstrap intervals, and HAC DM tests must be taken from "
-            "a regenerated frozen-config evaluation before publication.",
+            (
+                "This is not a claim of overall superiority. Lead- and scale-specific "
+                "RMSE/MAE/R2, bootstrap intervals, and HAC DM tests must be taken from "
+                "a regenerated frozen-config evaluation before publication."
+            ),
         ]
     )
     (ROOT / "RESULTS_SUMMARY.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

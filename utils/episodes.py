@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def drought_episodes(spei, threshold=-1.0, min_months=2):
     runs = count = 0
     for below in np.asarray(spei) <= threshold:

@@ -10,10 +10,14 @@ import torch
 
 from data.dataset import DroughtResearchDataset
 from data.preprocessing import ClimateNormalizer
-from data.protocol import DATASET_PROTOCOL_VERSION,INDEX_ALIGNMENT,SPLITS,SPLIT_BOUNDARIES,MODEL_FEATURES
-
+from data.protocol import (
+    DATASET_PROTOCOL_VERSION,
+    INDEX_ALIGNMENT,
+    MODEL_FEATURES,
+    SPLIT_BOUNDARIES,
+    SPLITS,
+)
 from data.quality import validate_site_table
-
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
 DEFAULT_FEATURES = list(MODEL_FEATURES)
@@ -30,7 +34,10 @@ def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json",ta
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
 
     if metadata.get("schema_version") != DATASET_PROTOCOL_VERSION:
-        raise RuntimeError("Dataset schema version mismatch. Rebuild the dataset.")
+        raise RuntimeError(
+            "Dataset predates the current teleconnection alignment or uses an "
+            "incompatible schema. Rebuild the dataset."
+        )
 
     if metadata.get("index_alignment") != INDEX_ALIGNMENT:
         raise RuntimeError("Dataset index alignment mismatch. Rebuild the dataset.")
@@ -198,7 +205,8 @@ def load_site_table(
             else ClimateNormalizer().fit(feature_frame.to_numpy()[train_mask])
         )
         normalized = normalizer.transform(feature_frame.to_numpy())
-        normalized[~np.isfinite(normalized)] = np.nan
+        if not np.isfinite(normalized).all():
+            raise ValueError(f"Non-finite normalized features remain for site {site}")
         normalizers[str(site)] = normalizer.to_dict()
         targets = rows[TARGETS].to_numpy(dtype=float)
         dates = rows.index
@@ -263,6 +271,28 @@ def load_site_table(
                             )
                         }
                         for d in dates[input_idx]
+                    ],
+                    "index_provenance_by_index": [
+                        {
+                            name: {
+                                "source_month": (
+                                    None if pd.isna(rows.iloc[row_idx].get(f"{name}_source_month"))
+                                    else str(rows.iloc[row_idx][f"{name}_source_month"])
+                                ),
+                                "effective_month": (
+                                    None if pd.isna(rows.iloc[row_idx].get(f"{name}_effective_month"))
+                                    else str(rows.iloc[row_idx][f"{name}_effective_month"])
+                                ),
+                                "observation_age_months": (
+                                    None if pd.isna(rows.iloc[row_idx].get(f"{name}_observation_age_months"))
+                                    else int(rows.iloc[row_idx][f"{name}_observation_age_months"])
+                                ),
+                                "is_stale": bool(rows.iloc[row_idx].get(f"{name}_is_stale", False)),
+                                "is_missing": bool(rows.iloc[row_idx].get(f"{name}_is_missing", False)),
+                            }
+                            for name in ("oni", "dmi", "nao", "pdo")
+                        }
+                        for row_idx in input_idx
                     ],
                 }
             )

@@ -102,7 +102,7 @@ def load_checkpoint(checkpoint_path: str | Path, map_location: str | torch.devic
     checkpoint_path = Path(checkpoint_path)
     state = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
     if not isinstance(state, dict):
-        raise ValueError(f"Checkpoint must contain a mapping: {checkpoint_path}")
+        raise TypeError(f"Checkpoint must contain a mapping: {checkpoint_path}")
     metadata_path = checkpoint_metadata_path(checkpoint_path)
     if metadata_path.is_file():
         sidecar = json.loads(metadata_path.read_text(encoding="utf-8"))

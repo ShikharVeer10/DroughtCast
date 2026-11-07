@@ -19,11 +19,13 @@ def test_split_dates_and_gap():
     assert split_for_date(pd.Timestamp("2026-01-01")) is None
 
 
-def test_normalizer_uses_given_training_rows_and_preserves_nan():
+def test_normalizer_uses_given_training_rows_and_imputes_with_training_mean():
     values = np.array([[1.0, 2.0], [3.0, np.nan]])
     normalizer = ClimateNormalizer().fit(values)
     assert np.allclose(normalizer.mean, [2.0, 2.0])
-    assert np.isnan(normalizer.transform(np.array([[np.nan, 2.0]]))[0, 0])
+    transformed = normalizer.transform(np.array([[np.nan, 2.0]]))
+    assert np.isfinite(transformed).all()
+    assert transformed[0, 0] == 0.0
 
 
 def test_date_aligned_windows_mask_missing_targets(tmp_path):

@@ -73,9 +73,10 @@ sites:
 
 data:
   path: data/maharashtra/monthly_sites.csv
-  start_year: 1981
+  start_year: 1990
   end_year: 2026
   end_month: 10
+  spei_calibration_start_year: 1990
   target_source: local
   site_filter:
     - akola
@@ -113,7 +114,7 @@ data:
     
   seq_len: 6
   forecast_steps: 4
-  train_split: "1981-2010"
+  train_split: "1990-2010"
   val_split: "2012-2015"
   test_split: "2017-2025"
 

@@ -5,15 +5,17 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
+from data.protocol import SPLITS
+
 CONFIG_PATH = Path("configs/config.yaml")
 SPEI_COLUMNS = [
             "spei_3",
             "spei_6",
             "spei_12",
 ]
-BASELINE_START = "1981-01-01"
-BASELINE_END = "2010-12-01"
-TEST_START = "2017-01-01"
+BASELINE_START = "1990-01-01"
+BASELINE_END = SPLITS["train_end"]
+TEST_START = SPLITS["test_start"]
 
 
 def load_configured_data() -> tuple[dict, pd.DataFrame]:
@@ -213,18 +215,17 @@ def main() -> None:
     report_spei_quality(frame)
 
     print("\nEXTERNAL INDEX ALIGNMENT")
-    try:
-        from data.protocol import INDEX_ALIGNMENT
-        for name, rule in INDEX_ALIGNMENT.items():
-            print(f"{name}: lag={rule['lag_months']} month(s); {rule['source']}")
-        metadata_path = Path(data_config["path"]).parent / "dataset_metadata.json"
-        if metadata_path.is_file():
-            import json
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            if metadata.get("index_alignment") != INDEX_ALIGNMENT:
-                raise ValueError("Dataset index alignment metadata is stale")
-    except ImportError:
-        raise
+    from data.protocol import INDEX_ALIGNMENT
+
+    for name, rule in INDEX_ALIGNMENT.items():
+        print(f"{name}: lag={rule['lag_months']} month(s); {rule['source']}")
+    metadata_path = Path(data_config["path"]).parent / "dataset_metadata.json"
+    if metadata_path.is_file():
+        import json
+
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        if metadata.get("index_alignment") != INDEX_ALIGNMENT:
+            raise ValueError("Dataset index alignment metadata is stale")
     print("\nDIAGNOSTICS COMPLETED")
     print("No data or model files were modified.")
 

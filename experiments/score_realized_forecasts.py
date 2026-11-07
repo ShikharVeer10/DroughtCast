@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from data.protocol import SPLITS
 from utils.probability import brier_score, reliability_table
 
 SPEI_COLUMNS = {"SPEI_3": "spei_3_obs", "SPEI_6": "spei_6_obs", "SPEI_12": "spei_12_obs"}
@@ -37,7 +38,7 @@ def main() -> None:
         raise ValueError(f"Expected 96 site-month-scale rows, found {len(scored)}")
     scored["event"] = (scored.realized_spei <= -1.0).astype(int)
 
-    train = data.loc[data.date <= pd.Timestamp("2010-12-01")]
+    train = data.loc[data.date <= pd.Timestamp(SPLITS["train_end"])]
     base_rates = {
         scale: float((train[column] <= -1.0).mean())
         for scale, column in SPEI_COLUMNS.items()

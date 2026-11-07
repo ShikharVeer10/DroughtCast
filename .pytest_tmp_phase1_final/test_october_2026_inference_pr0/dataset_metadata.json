@@ -1,0 +1,1665 @@
+{
+  "schema_version": 10,
+  "source": "NASA POWER monthly point with daily-derived fallback for complete months; NOAA CPC/PSL teleconnection indices",
+  "source_urls": {
+    "nasa_power_monthly": "https://power.larc.nasa.gov/api/temporal/monthly/point",
+    "noaa_oni": "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt",
+    "noaa_dmi": "https://psl.noaa.gov/gcos_wgsp/Timeseries/Data/dmi.had.long.data",
+    "noaa_nao": "https://psl.noaa.gov/data/correlation/nao.data",
+    "noaa_pdo": "https://psl.noaa.gov/data/correlation/pdo.data"
+  },
+  "period": [
+    1990,
+    2026
+  ],
+  "latest_complete_month": "2026-10",
+  "spei_method": "nonparametric",
+  "spei_calibration_period": [
+    1990,
+    "2010-12-01"
+  ],
+  "target_source": "local",
+  "split_boundaries": {
+    "train_end": "2010-12-01",
+    "val_start": "2012-01-01",
+    "val_end": "2015-12-01",
+    "test_start": "2017-01-01",
+    "test_end": "2025-12-01"
+  },
+  "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
+  "sites": {
+    "aurangabad": {
+      "name": "Aurangabad",
+      "region": "Marathwada",
+      "lat": 19.8762,
+      "lon": 75.3433
+    },
+    "latur": {
+      "name": "Latur",
+      "region": "Marathwada",
+      "lat": 18.4088,
+      "lon": 76.5604
+    },
+    "beed": {
+      "name": "Beed",
+      "region": "Marathwada",
+      "lat": 18.9891,
+      "lon": 75.7601
+    },
+    "nanded": {
+      "name": "Nanded",
+      "region": "Marathwada",
+      "lat": 19.1383,
+      "lon": 77.321
+    },
+    "nagpur": {
+      "name": "Nagpur",
+      "region": "Vidarbha",
+      "lat": 21.1458,
+      "lon": 79.0882
+    },
+    "akola": {
+      "name": "Akola",
+      "region": "Vidarbha",
+      "lat": 20.7002,
+      "lon": 77.0082
+    },
+    "amravati": {
+      "name": "Amravati",
+      "region": "Vidarbha",
+      "lat": 20.9374,
+      "lon": 77.7796
+    },
+    "pune": {
+      "name": "Pune",
+      "region": "Madhya_Maharashtra",
+      "lat": 18.5204,
+      "lon": 73.8567
+    },
+    "solapur": {
+      "name": "Solapur",
+      "region": "Madhya_Maharashtra",
+      "lat": 17.6599,
+      "lon": 75.9064
+    },
+    "nashik": {
+      "name": "Nashik",
+      "region": "Madhya_Maharashtra",
+      "lat": 19.9975,
+      "lon": 73.7898
+    },
+    "mumbai": {
+      "name": "Mumbai",
+      "region": "Konkan",
+      "lat": 19.076,
+      "lon": 72.8777
+    },
+    "ratnagiri": {
+      "name": "Ratnagiri",
+      "region": "Konkan",
+      "lat": 16.9902,
+      "lon": 73.312
+    }
+  },
+  "climate_variables": [
+    "PRECTOTCORR",
+    "T2M",
+    "T2MDEW",
+    "WS10M",
+    "ALLSKY_SFC_SW_DWN",
+    "T2M_MAX",
+    "T2M_MIN",
+    "GWETTOP",
+    "GWETROOT"
+  ],
+  "teleconnection_indices": [
+    "oni",
+    "dmi",
+    "nao",
+    "pdo"
+  ],
+  "model_features": [
+    "PRECTOTCORR",
+    "T2M",
+    "T2MDEW",
+    "WS10M",
+    "GWETTOP",
+    "GWETROOT",
+    "VPD",
+    "T2M_RANGE",
+    "oni",
+    "dmi",
+    "nao",
+    "pdo",
+    "spei_3_obs",
+    "spei_6_obs",
+    "spei_12_obs"
+  ],
+  "index_alignment": {
+    "forecast_issue": "month-end of input month; target starts next month",
+    "oni": {
+      "source": "NOAA CPC centered 3-month season",
+      "source_url": "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt",
+      "units": "degC anomaly",
+      "publication_lag_months": 2,
+      "lag_months": 2,
+      "max_age_months": 3
+    },
+    "dmi": {
+      "source": "NOAA PSL monthly",
+      "source_url": "https://psl.noaa.gov/gcos_wgsp/Timeseries/Data/dmi.had.long.data",
+      "units": "degC anomaly",
+      "publication_lag_months": 1,
+      "lag_months": 1,
+      "max_age_months": 3
+    },
+    "nao": {
+      "source": "NOAA PSL monthly",
+      "source_url": "https://psl.noaa.gov/data/correlation/nao.data",
+      "units": "standardized index",
+      "publication_lag_months": 1,
+      "lag_months": 1,
+      "max_age_months": 3
+    },
+    "pdo": {
+      "source": "NOAA PSL monthly",
+      "source_url": "https://psl.noaa.gov/data/correlation/pdo.data",
+      "units": "degC anomaly",
+      "publication_lag_months": 1,
+      "lag_months": 1,
+      "max_age_months": 6
+    }
+  },
+  "index_last_source_month": {
+    "oni": "2026-09-01",
+    "dmi": "2026-05-01",
+    "nao": "2026-07-01",
+    "pdo": "2025-08-01"
+  },
+  "index_max_age_months": {
+    "oni": 3,
+    "dmi": 3,
+    "nao": 3,
+    "pdo": 6
+  },
+  "index_cache_provenance": {
+    "oni": {
+      "source_url": "https://www.cpc.ncep.noaa.gov/data/indices/oni.ascii.txt",
+      "retrieved_utc": "2026-11-07T16:05:35.804615+00:00",
+      "sha256": "118c563331335c8649cdc2677e6be7ae89d1259d901345fcddbc2857af280f7f",
+      "original_source_file": "data\\raw_protocol7_refresh\\noaa_oni.txt",
+      "latest_observation_month": "2026-09",
+      "units": "degC anomaly",
+      "parsing_method": "ONI CPC season label mapped to season-ending month; PSL year row parsed as Jan-Dec; sentinel values rejected",
+      "publication_lag_months_assumed": 2,
+      "availability_lag_documentation": "No machine-readable publication timestamps in source; conservative lag is an explicit protocol assumption."
+    },
+    "dmi": {
+      "source_url": "https://psl.noaa.gov/gcos_wgsp/Timeseries/Data/dmi.had.long.data",
+      "retrieved_utc": "2026-11-07T16:05:36.759280+00:00",
+      "sha256": "42c1000e221addacac4451b8b9ddfbc5ee732b99ee69b0be5105e69ebe881e05",
+      "original_source_file": "data\\raw_protocol7_refresh\\noaa_dmi.txt",
+      "latest_observation_month": "2026-05",
+      "units": "degC anomaly",
+      "parsing_method": "ONI CPC season label mapped to season-ending month; PSL year row parsed as Jan-Dec; sentinel values rejected",
+      "publication_lag_months_assumed": 1,
+      "availability_lag_documentation": "No machine-readable publication timestamps in source; conservative lag is an explicit protocol assumption."
+    },
+    "nao": {
+      "source_url": "https://psl.noaa.gov/data/correlation/nao.data",
+      "retrieved_utc": "2026-11-07T16:05:37.785562+00:00",
+      "sha256": "011b716136ff74961e14cb3215a3a57295d4d41be46b9e42b327ba863601cb46",
+      "original_source_file": "data\\raw_protocol7_refresh\\noaa_nao.txt",
+      "latest_observation_month": "2026-07",
+      "units": "standardized index",
+      "parsing_method": "ONI CPC season label mapped to season-ending month; PSL year row parsed as Jan-Dec; sentinel values rejected",
+      "publication_lag_months_assumed": 1,
+      "availability_lag_documentation": "No machine-readable publication timestamps in source; conservative lag is an explicit protocol assumption."
+    },
+    "pdo": {
+      "source_url": "https://psl.noaa.gov/data/correlation/pdo.data",
+      "retrieved_utc": "2026-11-07T16:05:38.743206+00:00",
+      "sha256": "c7aef29bb9ab991fbb3702b9889047db73a090bd98358aed242fb2aba7ed0200",
+      "original_source_file": "data\\raw_protocol7_refresh\\noaa_pdo.txt",
+      "latest_observation_month": "2025-08",
+      "units": "degC anomaly",
+      "parsing_method": "ONI CPC season label mapped to season-ending month; PSL year row parsed as Jan-Dec; sentinel values rejected",
+      "publication_lag_months_assumed": 1,
+      "availability_lag_documentation": "No machine-readable publication timestamps in source; conservative lag is an explicit protocol assumption."
+    }
+  },
+  "index_provenance_audit": "data\\maharashtra\\index_provenance_audit.json",
+  "power_cache_provenance": {
+    "aurangabad": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:41.233306+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\aurangabad_power_1990_2026_v10.metadata.csv"
+    },
+    "latur": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:43.274452+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\latur_power_1990_2026_v10.metadata.csv"
+    },
+    "beed": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:45.097534+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\beed_power_1990_2026_v10.metadata.csv"
+    },
+    "nanded": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SYN1DEG",
+          "SRB",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:47.140629+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\nanded_power_1990_2026_v10.metadata.csv"
+    },
+    "nagpur": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:49.167119+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\nagpur_power_1990_2026_v10.metadata.csv"
+    },
+    "akola": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:51.241445+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\akola_power_1990_2026_v10.metadata.csv"
+    },
+    "amravati": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:53.168770+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\amravati_power_1990_2026_v10.metadata.csv"
+    },
+    "pune": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:54.974489+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\pune_power_1990_2026_v10.metadata.csv"
+    },
+    "solapur": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:56.964019+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\solapur_power_1990_2026_v10.metadata.csv"
+    },
+    "nashik": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:58.966814+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\nashik_power_1990_2026_v10.metadata.csv"
+    },
+    "mumbai": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:05:59.981482+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\mumbai_power_1990_2026_v10.metadata.csv"
+    },
+    "ratnagiri": {
+      "units": {
+        "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+        "GWETROOT": "1",
+        "GWETTOP": "1",
+        "PRECTOTCORR": "mm/day",
+        "T2M": "C",
+        "T2MDEW": "C",
+        "T2M_MAX": "C",
+        "T2M_MIN": "C",
+        "WS10M": "m/s"
+      },
+      "header": {
+        "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+        "api": {
+          "version": "v2.10.0",
+          "name": "POWER Monthly and Annual API"
+        },
+        "sources": [
+          "SRB",
+          "SYN1DEG",
+          "MERRA2",
+          "POWER"
+        ],
+        "fill_value": -999.0,
+        "time_standard": "LST",
+        "start": "19900101",
+        "end": "20261130"
+      },
+      "unit_validation": "passed",
+      "retrieved_utc": "2026-11-07T16:06:01.782033+00:00",
+      "cache_file": "data\\raw_protocol7_refresh\\ratnagiri_power_1990_2026_v10.metadata.csv"
+    }
+  },
+  "input_units": {
+    "PRECTOTCORR": "mm/day, converted to monthly total by multiplying calendar days",
+    "temperature": "degC",
+    "WS10M": "m/s",
+    "ALLSKY_SFC_SW_DWN": "daily radiation energy; fresh response unit and legacy-cache verification status are recorded per site",
+    "GWETTOP": "dimensionless soil wetness fraction",
+    "GWETROOT": "dimensionless root-zone soil wetness fraction",
+    "VPD": "kPa, estimated from monthly temperature extrema and dewpoint",
+    "T2M_RANGE": "degC, monthly mean maximum minus monthly mean minimum temperature",
+    "feature_validation": {
+      "akola": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "amravati": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "aurangabad": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "beed": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "latur": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "mumbai": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "nagpur": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "nanded": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "nashik": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "pune": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "ratnagiri": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      },
+      "solapur": {
+        "observations": 442,
+        "features": {
+          "PRECTOTCORR": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2MDEW": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "WS10M": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETTOP": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "GWETROOT": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "VPD": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "T2M_RANGE": {
+            "missing": 0,
+            "finite": 442,
+            "training_finite": 252
+          },
+          "oni": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "dmi": {
+            "missing": 3,
+            "finite": 439,
+            "training_finite": 251
+          },
+          "nao": {
+            "missing": 1,
+            "finite": 441,
+            "training_finite": 251
+          },
+          "pdo": {
+            "missing": 9,
+            "finite": 433,
+            "training_finite": 251
+          },
+          "spei_3_obs": {
+            "missing": 2,
+            "finite": 440,
+            "training_finite": 250
+          },
+          "spei_6_obs": {
+            "missing": 5,
+            "finite": 437,
+            "training_finite": 247
+          },
+          "spei_12_obs": {
+            "missing": 11,
+            "finite": 431,
+            "training_finite": 241
+          }
+        },
+        "targets": {
+          "spei_3": 440,
+          "spei_6": 437,
+          "spei_12": 431
+        }
+      }
+    }
+  },
+  "dataset_built_utc": "2026-11-07T16:09:32.457815+00:00",
+  "speibase": null,
+  "target_quality_report": "data\\maharashtra\\target_quality.json"
+}

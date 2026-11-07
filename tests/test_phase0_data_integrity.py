@@ -231,6 +231,104 @@ def test_indices_follow_protocol_specific_lags():
     assert result.loc[3, ["dmi", "nao", "pdo"]].eq(2.0).all()
 
 
+def test_index_alignment_preserves_calendar_availability_and_provenance():
+    from data.build_dataset import align_index_with_provenance
+
+    source = pd.Series([1.25, 2.5], index=pd.to_datetime(["2026-08-01", "2026-09-01"]))
+    issues = pd.date_range("2026-08-01", "2026-10-01", freq="MS")
+    aligned = align_index_with_provenance("oni", source, issues)
+    # ONI has a two-calendar-month conservative lag; September becomes
+    # effective in November and must not appear in the October input.
+    assert aligned.loc[pd.Timestamp("2026-10-01"), "value"] == pytest.approx(1.25)
+    assert aligned.loc[pd.Timestamp("2026-10-01"), "source_month"] == pd.Timestamp("2026-08-01")
+    assert aligned.loc[pd.Timestamp("2026-10-01"), "effective_month"] == pd.Timestamp("2026-10-01")
+    assert aligned.loc[pd.Timestamp("2026-10-01"), "observation_age_months"] == 2
+    assert not aligned.loc[pd.Timestamp("2026-10-01"), "is_stale"]
+
+
+def test_old_pdo_value_is_missing_at_october_2026():
+    from data.build_dataset import align_index_with_provenance
+
+    source = pd.Series([0.8], index=pd.to_datetime(["2025-08-01"]))
+    aligned = align_index_with_provenance("pdo", source, pd.DatetimeIndex([pd.Timestamp("2026-10-01")]))
+    row = aligned.iloc[0]
+    assert pd.isna(row["value"])
+    assert row["is_stale"]
+    assert row["is_missing"]
+    assert row["observation_age_months"] == 14
+    assert row["source_month"] == pd.Timestamp("2025-08-01")
+    assert row["effective_month"] == pd.Timestamp("2025-09-01")
+
+
+@pytest.mark.parametrize("name", ["oni", "dmi", "nao", "pdo"])
+def test_each_index_publication_lag_uses_calendar_months(name):
+    from data.build_dataset import align_index_with_provenance
+    from data.protocol import INDEX_ALIGNMENT
+
+    lag = INDEX_ALIGNMENT[name]["publication_lag_months"]
+    source = pd.Series([7.0], index=pd.to_datetime(["2025-12-01"]))
+    issues = pd.date_range("2025-12-01", "2026-03-01", freq="MS")
+    aligned = align_index_with_provenance(name, source, issues)
+    eligible = pd.Timestamp("2025-12-01") + pd.offsets.MonthBegin(lag)
+    before = issues[issues < eligible]
+    if len(before):
+        assert aligned.loc[before[-1], "is_missing"]
+    assert aligned.loc[eligible, "value"] == pytest.approx(7.0)
+    assert aligned.loc[eligible, "source_month"] == pd.Timestamp("2025-12-01")
+    assert aligned.loc[eligible, "effective_month"] == eligible
+
+
+def test_index_max_age_boundary_and_first_stale_month():
+    from data.build_dataset import align_index_with_provenance
+    from data.protocol import INDEX_ALIGNMENT
+
+    source = pd.Series([2.0], index=pd.to_datetime(["2025-12-01"]))
+    issues = pd.date_range("2026-01-01", "2026-08-01", freq="MS")
+    for name, policy in INDEX_ALIGNMENT.items():
+        if name not in {"oni", "dmi", "nao", "pdo"}:
+            continue
+        aligned = align_index_with_provenance(name, source, issues)
+        boundary = pd.Timestamp("2025-12-01") + pd.DateOffset(months=policy["max_age_months"])
+        beyond = boundary + pd.DateOffset(months=1)
+        assert aligned.loc[boundary, "observation_age_months"] == policy["max_age_months"]
+        assert not aligned.loc[boundary, "is_stale"]
+        assert pd.isna(aligned.loc[beyond, "value"])
+        assert aligned.loc[beyond, "is_stale"]
+
+
+def test_missing_calendar_source_month_is_not_counted_as_new_observation():
+    from data.build_dataset import align_index_with_provenance
+
+    # February is absent; February should continue to report January's origin.
+    source = pd.Series([1.0, 3.0], index=pd.to_datetime(["2026-01-01", "2026-03-01"]))
+    issues = pd.date_range("2026-02-01", "2026-04-01", freq="MS")
+    aligned = align_index_with_provenance("dmi", source, issues)
+    assert aligned.loc[pd.Timestamp("2026-03-01"), "source_month"] == pd.Timestamp("2026-01-01")
+    assert aligned.loc[pd.Timestamp("2026-03-01"), "observation_age_months"] == 2
+    assert aligned.loc[pd.Timestamp("2026-04-01"), "source_month"] == pd.Timestamp("2026-03-01")
+
+
+def test_future_index_source_is_never_used_before_effective_month():
+    from data.build_dataset import align_index_with_provenance
+
+    source = pd.Series([9.0], index=pd.to_datetime(["2026-09-01"]))
+    issues = pd.date_range("2026-09-01", "2026-12-01", freq="MS")
+    aligned = align_index_with_provenance("oni", source, issues)
+    assert aligned.loc[pd.Timestamp("2026-10-01"), "is_missing"]
+    assert pd.isna(aligned.loc[pd.Timestamp("2026-10-01"), "source_month"])
+    assert aligned.loc[pd.Timestamp("2026-11-01"), "value"] == pytest.approx(9.0)
+
+
+def test_index_audit_columns_are_not_in_canonical_model_features():
+    from data.protocol import MODEL_FEATURES
+
+    for name in ("oni", "dmi", "nao", "pdo"):
+        assert name in MODEL_FEATURES
+        assert f"{name}_source_month" not in MODEL_FEATURES
+        assert f"{name}_effective_month" not in MODEL_FEATURES
+        assert f"{name}_observation_age_months" not in MODEL_FEATURES
+
+
 def test_stale_index_is_not_made_current_by_shared_calendar_index():
     from data.build_dataset import build_site
 

@@ -7,6 +7,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from data.protocol import SPEI_CALIBRATION_END
+
 SCALES = ("spei_3", "spei_6", "spei_12")
 
 
@@ -40,16 +42,14 @@ def validate_site_table(frame: pd.DataFrame,features: list[str],expected_sites: 
 
     sites = sorted(frame["site"].astype(str).unique())
 
-    if strict and expected_sites is not None:
-        if set(sites) != set(expected_sites):
-            raise ValueError(
-                f"Site mismatch: expected={sorted(expected_sites)}, "
-                f"actual={sites}"
-            )
+    if strict and expected_sites is not None and set(sites) != set(expected_sites):
+        raise ValueError(
+            f"Site mismatch: expected={sorted(expected_sites)}, actual={sites}"
+        )
 
     report = {}
 
-    calibration_end = pd.Timestamp("2010-12-01")
+    calibration_end = pd.Timestamp(SPEI_CALIBRATION_END)
 
     for site, group in frame.assign(_date=dates).groupby("site"):
 
@@ -107,6 +107,8 @@ def validate_site_table(frame: pd.DataFrame,features: list[str],expected_sites: 
                 )
 
         for column in ("GWETTOP", "GWETROOT"):
+            if column not in inputs:
+                continue
 
             values = inputs[column].dropna()
 
@@ -114,6 +116,8 @@ def validate_site_table(frame: pd.DataFrame,features: list[str],expected_sites: 
                 raise ValueError(f"{column} outside [0, 1] for site {site}")
 
         for column in ("VPD", "T2M_RANGE", "PRECTOTCORR"):
+            if column not in inputs:
+                continue
             values = inputs[column].dropna()
 
             if strict and (values < 0).any():
@@ -140,7 +144,7 @@ def validate_site_table(frame: pd.DataFrame,features: list[str],expected_sites: 
     return report
 
 
-def target_quality_report(frame: pd.DataFrame, calibration_end: str = "2010-12-01") -> dict:
+def target_quality_report(frame: pd.DataFrame, calibration_end: str = SPEI_CALIBRATION_END) -> dict:
     required = {"site", "date", *SCALES}
     missing = required.difference(frame.columns)
     if missing:

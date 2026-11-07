@@ -12,6 +12,7 @@ import torch
 import yaml
 
 from data.loader import load_site_table, validate_dataset_protocol
+from data.preprocessing import ClimateNormalizer
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import (
     architecture_fingerprint,
@@ -121,29 +122,21 @@ def _load_recent_input(input_csv: Path, site: str, features: list[str], seq_len:
             f"Site '{site}' input rows must be consecutive month starts: {dates}"
         )
     raw = recent[features].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-    if not np.isfinite(raw).all():
-        raise ValueError(
-            f"The latest {seq_len} input rows contain missing or nonnumeric feature values"
-        )
     saved = json.loads(metadata_path.read_text(encoding="utf-8"))
     normalizer = saved.get("normalizers", {}).get(site)
     if not normalizer:
         raise ValueError(
             f"No train-only normalizer for site '{site}' in {metadata_path}"
         )
-    mean = np.asarray(normalizer.get("mean"), dtype=float)
-    std = np.asarray(normalizer.get("std"), dtype=float)
-    if (
-        mean.shape != (len(features),)
-        or std.shape != (len(features),)
-        or not np.isfinite(mean).all()
-        or not np.isfinite(std).all()
-        or np.any(std <= 0)
-    ):
-        raise ValueError(
-            f"Invalid saved normalizer for site '{site}' in {metadata_path}"
-        )
-    return ((raw - mean) / std).astype(np.float32), dates, saved
+    if saved.get("features") != features:
+        raise ValueError("Saved normalizer feature order does not match inference configuration")
+    fitted = ClimateNormalizer.from_dict(normalizer)
+    if fitted.mean.shape != (len(features),):
+        raise ValueError(f"Invalid saved normalizer for site '{site}' in {metadata_path}")
+    normalized = fitted.transform(raw).astype(np.float32)
+    if not np.isfinite(normalized).all():
+        raise ValueError("Inference preprocessing produced non-finite model inputs")
+    return normalized, dates, saved
 
 
 def main():
