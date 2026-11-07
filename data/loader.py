@@ -1,4 +1,3 @@
-"""Date-aligned, split-safe window construction for site-month tables."""
 
 from __future__ import annotations
 
@@ -12,13 +11,9 @@ import torch
 
 from data.dataset import DroughtResearchDataset
 from data.preprocessing import ClimateNormalizer
-from data.protocol import (
-    DATASET_PROTOCOL_VERSION,
-    INDEX_ALIGNMENT,
-    SPLIT_BOUNDARIES,
-    SPLITS,
-)
+from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT, SPLITS, SPLIT_BOUNDARIES
 from data.quality import validate_site_table
+from data.protocol import SPLITS
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
 DEFAULT_FEATURES = [
@@ -35,10 +30,7 @@ DEFAULT_FEATURES = [
     "spei_6_obs",
     "spei_12_obs",
 ]
-def validate_dataset_protocol(
-    path: str | Path = "data/dataset_metadata.json", target_source: str | None = None
-) -> dict:
-    """Reject datasets built before the current leakage-alignment protocol."""
+def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json", target_source: str | None = None) -> dict:
     metadata_path = Path(path)
     if not metadata_path.is_file():
         raise FileNotFoundError(
@@ -58,20 +50,16 @@ def validate_dataset_protocol(
     return metadata
 
 
-def split_for_date(date: pd.Timestamp) -> str | None:
-    return split_for_date_with_boundaries(date, **SPLIT_BOUNDARIES)
-
-
-def split_for_date_with_boundaries(date: pd.Timestamp, train_end: str, val_start: str, val_end: str, test_start: str, test_end: str | None = None) -> str | None:
-    date = pd.Timestamp(date)
-    if date <= pd.Timestamp(train_end):
+def split_for_date(date,splits=None):
+    s={**SPLITS, **(splits or {})}
+    date=pd.Timestamp(date)
+    if date<=pd.Timestamp(s["train_end"]):
         return "train"
-    if pd.Timestamp(val_start) <= date <= pd.Timestamp(val_end):
+    if pd.Timestamp(s["val_start"])<=date<=pd.Timestamp(s["val_end"]):
         return "val"
-    if date >= pd.Timestamp(test_start) and (test_end is None or date <= pd.Timestamp(test_end)):
+    if pd.Timestamp(s["test_start"])<=date<=pd.Timestamp(s["test_end"]):
         return "test"
     return None
-
 
 def load_site_table(
     path: str | Path,
@@ -191,7 +179,7 @@ def load_site_table(
             rows["site"] = site
         split_fn = split_for_date
         if split_config:
-            split_fn = lambda d: split_for_date_with_boundaries(
+            split_fn = lambda d: split_for_date(
                 d, split_config["train_end"], split_config["val_start"],
                 split_config["val_end"], split_config["test_start"],
                 split_config.get("test_end")
@@ -202,10 +190,7 @@ def load_site_table(
             if "region" in rows and rows["region"].notna().any()
             else "unknown"
         )
-        # Do not interpolate across chronological boundaries: that would use
-        # validation/test observations to impute an earlier split. Missing
-        # inputs remain invalid windows rather than receiving a future-derived
-        # value; the normalizer itself is still fitted on train rows only.
+       
         feature_frame = rows[features].apply(pd.to_numeric, errors="coerce")
         train_mask = split_rows == "train"
         missing_counts = feature_frame.isna().sum()
