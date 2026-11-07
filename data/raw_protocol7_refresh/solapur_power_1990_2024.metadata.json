@@ -1,0 +1,30 @@
+{
+  "units": {
+    "ALLSKY_SFC_SW_DWN": "MJ/m^2/day",
+    "PRECTOTCORR": "mm/day",
+    "T2M": "C",
+    "T2MDEW": "C",
+    "T2M_MAX": "C",
+    "T2M_MIN": "C",
+    "WS10M": "m/s"
+  },
+  "header": {
+    "title": "NASA/POWER Source Native Resolution Monthly and Annual",
+    "api": {
+      "version": "v2.10.0",
+      "name": "POWER Monthly and Annual API"
+    },
+    "sources": [
+      "SYN1DEG",
+      "SRB",
+      "MERRA2",
+      "POWER"
+    ],
+    "fill_value": -999.0,
+    "time_standard": "LST",
+    "start": "19900101",
+    "end": "20241231"
+  },
+  "unit_validation": "passed",
+  "retrieved_utc": "2026-11-07T02:46:24.060570+00:00"
+}

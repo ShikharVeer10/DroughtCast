@@ -5,6 +5,7 @@ import pytest
 from data.loader import (
     DATASET_PROTOCOL_VERSION,
     INDEX_ALIGNMENT,
+    SPLIT_BOUNDARIES,
     validate_dataset_protocol,
 )
 
@@ -16,6 +17,7 @@ def test_current_dataset_protocol_is_accepted(tmp_path):
             {
                 "schema_version": DATASET_PROTOCOL_VERSION,
                 "index_alignment": INDEX_ALIGNMENT,
+                "split_boundaries": SPLIT_BOUNDARIES,
             }
         ),
         encoding="utf-8",

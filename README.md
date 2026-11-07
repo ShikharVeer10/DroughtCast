@@ -8,7 +8,7 @@ This repository contains a research prototype for forecasting monthly SPEI at 12
 
 The active model uses 6 monthly input steps, 12 configured features, and predicts 4 leads (T+1 through T+4) for SPEI-3, SPEI-6, and SPEI-12. The configured experiment predicts q10, q50, and q90 for each scale and lead using pinball loss. These are forecast quantiles, not drought probabilities. The q10–q90 interval is nominally the central 80% forecast interval. The shared LSTM and attention implementation is documented in `models/forecaster.py` and `tests/test_architecture_conformance.py`; model outputs have one scale head per target scale. The point model in `configs/base_diagram.yaml` is a separate experiment and must use a distinct checkpoint.
 
-The configured dataset spans January 1990 through October 2026. The chronological evaluation boundaries are train through December 2010, validation January 2013–December 2014, and test January 2017–December 2025. Gaps are excluded. A 2026 input period is not a 2026 test result; the test ends in 2025. A four-lead model produces only the next four monthly targets, not a full-year 2027 forecast.
+The configured dataset spans January 1990 through October 2026. The chronological evaluation boundaries are train through December 2010, validation January 2011–December 2015, and test January 2017–December 2025. The 2016 gap is excluded; all input and target months in a window must belong to the same split. A 2026 input period is not a 2026 test result; the test ends in 2025. A four-lead model produces only the next four monthly targets, not a full-year 2027 forecast.
 
 ## Data and scientific limitations
 

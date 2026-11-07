@@ -14,7 +14,7 @@ from sklearn.linear_model import LogisticRegression
 
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
-from utils.artifacts import validate_checkpoint_metadata
+from utils.artifacts import load_checkpoint, validate_checkpoint_metadata
 from utils.probability import (
     brier_score,
     calibration_slope_intercept,
@@ -57,7 +57,8 @@ def main() -> None:
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     dataset_path = Path(cfg["data"]["path"])
     protocol = validate_dataset_protocol(
-        dataset_path.parent / "dataset_metadata.json"
+        dataset_path.parent / "dataset_metadata.json",
+        cfg["data"].get("target_source", "local"),
     )
     data = load_site_table(
         cfg["data"]["path"],
@@ -73,7 +74,7 @@ def main() -> None:
         cfg.get("sites"),
     )
     cfg["data"]["input_dim"] = data["test"].X.shape[-1]
-    checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    checkpoint = load_checkpoint(args.checkpoint, map_location="cpu")
     validate_checkpoint_metadata(checkpoint, cfg, dataset_path)
     model = MultiScaleForecaster(cfg)
     model.load_state_dict(checkpoint["model"])

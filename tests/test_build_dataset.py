@@ -1,6 +1,6 @@
 import numpy as np
 
-from data.build_dataset import _nonparametric_z_scores, _normalize_sites, SITES
+from data.build_dataset import SITES, _nonparametric_z_scores, _normalize_sites
 
 
 def test_nonparametric_extreme_tails_are_finite_and_clipped():

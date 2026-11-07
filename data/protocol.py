@@ -1,6 +1,17 @@
 """Versioned rules for information available to monthly forecasts."""
 
-DATASET_PROTOCOL_VERSION = 6
+DATASET_PROTOCOL_VERSION = 8
+
+# Single chronological protocol shared by site, spatial and paper pipelines.
+SPLITS = {
+    "train_end": "2010-12-01",
+    "val_start": "2012-01-01",
+    "val_end": "2015-12-01",
+    "test_start": "2017-01-01",
+    "test_end": "2025-12-01",   # 2026 stays an untouched final holdout
+}
+SPLIT_BOUNDARIES = {**SPLITS, "test_end": "2025-12-01"}
+SPEI_CALIBRATION_END = SPLITS["train_end"]
 
 # Forecast inputs end at month m; target months begin at m+1.
 # ONI is a centered three-month season; its month label is the center month,

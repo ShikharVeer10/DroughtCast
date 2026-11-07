@@ -39,11 +39,14 @@ def main():
         return
 
     dataset_protocol = validate_dataset_protocol(
-        dataset_path.parent / "dataset_metadata.json"
+        dataset_path.parent / "dataset_metadata.json",
+        config["data"].get("target_source", "local"),
     )
     expected_protocol = {
         "schema_version": dataset_protocol["schema_version"],
         "index_alignment": dataset_protocol["index_alignment"],
+        "split_boundaries": dataset_protocol["split_boundaries"],
+        "target_source": dataset_protocol.get("target_source", "local"),
     }
     stale_reports = [
         str(report["seed"])

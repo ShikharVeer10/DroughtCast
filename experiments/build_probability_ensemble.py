@@ -6,7 +6,8 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import torch
+
+from utils.artifacts import load_checkpoint
 
 KEYS = ["site", "input_start_month", "input_end_month", "target_month", "scale", "lead", "drought_threshold_spei"]
 
@@ -32,7 +33,7 @@ def main() -> None:
     compatible = []
     seen_seeds = set()
     for checkpoint in checkpoints:
-        metadata = torch.load(checkpoint, map_location="cpu", weights_only=False)
+        metadata = load_checkpoint(checkpoint, map_location="cpu")
         seed = int(metadata.get("seed", checkpoint.stem.removeprefix("model_seed_")))
         if metadata.get("artifact_metadata", {}).get("dataset_sha256") == data_hash and seed not in seen_seeds:
             compatible.append(checkpoint)
@@ -41,7 +42,7 @@ def main() -> None:
         print(f"Only {len(compatible)} compatible checkpoint(s) match the current dataset hash {data_hash}.")
         stale_seeds = []
         for checkpoint in checkpoints:
-            metadata = torch.load(checkpoint, map_location="cpu", weights_only=False)
+            metadata = load_checkpoint(checkpoint, map_location="cpu")
             seed = int(metadata.get("seed", checkpoint.stem.removeprefix("model_seed_")))
             if seed not in seen_seeds and seed not in stale_seeds:
                 stale_seeds.append(seed)

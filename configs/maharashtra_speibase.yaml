@@ -1,0 +1,148 @@
+experiment:
+  name: maharashtra_speibase_targets
+  seed: 42
+  primary_endpoint:
+    scale: spei_3
+    leads:
+    - 3
+    - 4
+    metric: mse_skill_vs_persistence
+    baseline: persistence
+    bootstrap_unit: site_year
+sites:
+  aurangabad:
+    name: Aurangabad
+    region: Marathwada
+    lat: 19.8762
+    lon: 75.3433
+  latur:
+    name: Latur
+    region: Marathwada
+    lat: 18.4088
+    lon: 76.5604
+  beed:
+    name: Beed
+    region: Marathwada
+    lat: 18.9891
+    lon: 75.7601
+  nanded:
+    name: Nanded
+    region: Marathwada
+    lat: 19.1383
+    lon: 77.321
+  nagpur:
+    name: Nagpur
+    region: Vidarbha
+    lat: 21.1458
+    lon: 79.0882
+  akola:
+    name: Akola
+    region: Vidarbha
+    lat: 20.7002
+    lon: 77.0082
+  amravati:
+    name: Amravati
+    region: Vidarbha
+    lat: 20.9374
+    lon: 77.7796
+  pune:
+    name: Pune
+    region: Madhya_Maharashtra
+    lat: 18.5204
+    lon: 73.8567
+  solapur:
+    name: Solapur
+    region: Madhya_Maharashtra
+    lat: 17.6599
+    lon: 75.9064
+  nashik:
+    name: Nashik
+    region: Madhya_Maharashtra
+    lat: 19.9975
+    lon: 73.7898
+  mumbai:
+    name: Mumbai
+    region: Konkan
+    lat: 19.076
+    lon: 72.8777
+  ratnagiri:
+    name: Ratnagiri
+    region: Konkan
+    lat: 16.9902
+    lon: 73.312
+data:
+  path: results/maharashtra/protocol7_speibase/monthly_sites.csv
+  start_year: 1990
+  end_year: 2024
+  end_month: 12
+  target_source: speibase
+  site_filter:
+  - akola
+  - amravati
+  - aurangabad
+  - beed
+  - latur
+  - mumbai
+  - nagpur
+  - nanded
+  - nashik
+  - pune
+  - ratnagiri
+  - solapur
+  features:
+  - PRECTOTCORR
+  - T2M
+  - T2MDEW
+  - WS10M
+  - GWETTOP
+  - oni
+  - dmi
+  - nao
+  - pdo
+  - spei_3_obs
+  - spei_6_obs
+  - spei_12_obs
+  target_scales:
+  - spei_3
+  - spei_6
+  - spei_12
+  seq_len: 6
+  forecast_steps: 4
+  train_split: 1990-2010
+  val_split: 2011-2015
+  test_split: 2017-2025
+  split_boundaries:
+    train_end: '2010-12-01'
+    val_start: '2011-01-01'
+    val_end: '2015-12-01'
+    test_start: '2017-01-01'
+    test_end: '2025-12-01'
+  metadata_path: results/maharashtra/protocol7_speibase/normalizers.json
+model:
+  encoder: lstm
+  attention: shared
+  heads: direct
+  input_dim: 12
+  hidden_dim_1: 64
+  hidden_dim_2: 32
+  dropout: 0.2
+  use_attention: true
+  use_variable_gate: true
+  use_cascaded_decoder: false
+  quantiles:
+  - 0.1
+  - 0.5
+  - 0.9
+training:
+  epochs: 60
+  batch_size: 32
+  learning_rate: 0.001
+  lr_patience: 5
+  weight_decay: 0.0001
+  early_stopping_patience: 12
+  grad_clip: 1.0
+  extreme_weight: 1.5
+  extreme_threshold: -1.0
+  checkpoint_dir: results/maharashtra/protocol7_speibase/checkpoints
+  loss: pinball
+  task_weighting: fixed

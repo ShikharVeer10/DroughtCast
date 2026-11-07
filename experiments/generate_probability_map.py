@@ -22,7 +22,7 @@ import yaml
 
 from data.loader import load_site_table
 from models.forecaster import MultiScaleForecaster
-from utils.artifacts import validate_checkpoint_metadata
+from utils.artifacts import load_checkpoint, validate_checkpoint_metadata
 from utils.conformal import apply_cqr, calibrate_cqr, interval_metrics
 
 SCALES = ("spei_3", "spei_6", "spei_12")
@@ -81,7 +81,7 @@ def main() -> None:
         cfg.get("sites"),
     )
     cfg["data"]["input_dim"] = data["test"].X.shape[-1]
-    state = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
+    state = load_checkpoint(args.checkpoint, map_location="cpu")
     validate_checkpoint_metadata(state, cfg, cfg["data"]["path"])
     model = MultiScaleForecaster(cfg)
     model.load_state_dict(state["model"])

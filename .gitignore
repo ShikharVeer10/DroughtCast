@@ -6,6 +6,7 @@ __pycache__/
 .coverage
 htmlcov/
 .pytest_tmp/
+.pytest_tmp_run/
 
 # Environments and Package Managers
 .venv/
@@ -41,9 +42,11 @@ data/dataset_metadata.json
 data/target_quality.json
 data/maharashtra/
 checkpoints/maharashtra/
+checkpoints/maharashtra_2026/
 
 # Local Evaluation & Figure Run Artifacts
 results/
+results/legacy/
 outputs/
 *.log
 .pytest_tmp/

@@ -13,7 +13,7 @@ import yaml
 from data.loader import load_site_table, validate_dataset_protocol
 from evaluation.baselines import fit_classical, persistence, seasonal_predictions
 from models.forecaster import MultiScaleForecaster
-from utils.artifacts import validate_checkpoint_metadata
+from utils.artifacts import load_checkpoint, validate_checkpoint_metadata
 from utils.metrics import (
     calculate_kge,
     calculate_mae,
@@ -22,6 +22,7 @@ from utils.metrics import (
     drought_event_metrics,
     skill_score_persistence,
 )
+from utils.prob_baselines import persistence_residual_quantiles
 from utils.stats import (
     count_drought_episodes,
     dm_hac,
@@ -98,7 +99,8 @@ def main():
     artifact_dir.mkdir(parents=True, exist_ok=True)
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     dataset_protocol = validate_dataset_protocol(
-        Path(cfg["data"]["path"]).parent / "dataset_metadata.json"
+        Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
+        cfg["data"].get("target_source", "local"),
     )
     data = load_site_table(
         cfg["data"]["path"],
@@ -120,9 +122,7 @@ def main():
         raise RuntimeError("No valid test windows; data must cover 2017 onward")
     cfg["data"]["input_dim"] = test.X.shape[-1]
     model = MultiScaleForecaster(cfg)
-    checkpoint_state = torch.load(
-        args.checkpoint, map_location="cpu", weights_only=False
-    )
+    checkpoint_state = load_checkpoint(args.checkpoint, map_location="cpu")
     validate_checkpoint_metadata(checkpoint_state, cfg, cfg["data"]["path"])
     model.load_state_dict(checkpoint_state.get("model", checkpoint_state))
     model.eval()
@@ -143,6 +143,7 @@ def main():
             calibrate_cqr,
             crps_from_quantiles,
             interval_metrics,
+            pinball_score,
         )
 
         val = data["val"]
@@ -189,6 +190,11 @@ def main():
                     ),
                     "test_before": before,
                     "test_after": after,
+                    "test_raw_pinball": pinball_score(
+                        pred[valid, lead : lead + 1, :],
+                        y[valid, lead : lead + 1],
+                        quantiles,
+                    ),
                     "calibration_quantile": calibrated[scale_name][lead],
                     "crps_approx": crps_from_quantiles(
                         pred[valid, lead : lead + 1, :],
@@ -222,6 +228,55 @@ def main():
                         }
                     )
             calibration_report["scales"][scale_name] = metrics
+
+        # Train-only residual-distribution probabilistic persistence baseline.
+        baseline_val = persistence_residual_quantiles(
+            val.last_spei.numpy(), train.last_spei.numpy(), train.Y.numpy(),
+            train.mask.numpy(), quantiles,
+        )
+        baseline_test = persistence_residual_quantiles(
+            test.last_spei.numpy(), train.last_spei.numpy(), train.Y.numpy(),
+            train.mask.numpy(), quantiles,
+        )
+        baseline_report = {"method": "persistence + train-only scale/lead residual quantiles", "scales": {}}
+        for scale_idx, scale_name in enumerate(SCALES):
+            val_y = val.Y[:, scale_idx].numpy()
+            val_mask = val.mask[:, scale_idx].numpy()
+            test_y = test.Y[:, scale_idx].numpy()
+            test_mask = test.mask[:, scale_idx].numpy()
+            corrections = calibrate_cqr(
+                baseline_val[:, scale_idx], val_y, val_mask, quantiles
+            )
+            rows = {}
+            for lead in range(test_y.shape[1]):
+                valid = test_mask[:, lead] & np.isfinite(baseline_test[:, scale_idx, lead]).all(axis=-1)
+                lower_raw = baseline_test[valid, scale_idx, lead, 0]
+                upper_raw = baseline_test[valid, scale_idx, lead, 2]
+                lower_cqr, upper_cqr = apply_cqr(
+                    baseline_test[:, scale_idx], corrections
+                )
+                rows[f"T+{lead + 1}"] = {
+                    "n": int(valid.sum()),
+                    "raw_interval": interval_metrics(
+                        lower_raw, upper_raw, test_y[valid, lead]
+                    ),
+                    "cqr_interval": interval_metrics(
+                        lower_cqr[valid, lead], upper_cqr[valid, lead], test_y[valid, lead]
+                    ),
+                    "raw_pinball": pinball_score(
+                        baseline_test[valid, scale_idx, lead : lead + 1],
+                        test_y[valid, lead : lead + 1], quantiles,
+                    ),
+                    "raw_crps_approx": crps_from_quantiles(
+                        baseline_test[valid, scale_idx, lead : lead + 1],
+                        test_y[valid, lead : lead + 1], quantiles,
+                    ),
+                    "cqr_correction": float(corrections[lead]),
+                }
+            baseline_report["scales"][scale_name] = rows
+        calibration_report["probabilistic_baselines"] = {
+            "persistence_residual_quantiles": baseline_report
+        }
         quantile_path = artifact_dir / f"quantile_test_predictions_seed_{args.seed}.csv"
         quantile_path.parent.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(quantile_prediction_rows).to_csv(quantile_path, index=False)
@@ -472,6 +527,8 @@ def main():
         "dataset_protocol": {
             "schema_version": dataset_protocol["schema_version"],
             "index_alignment": dataset_protocol["index_alignment"],
+            "split_boundaries": dataset_protocol["split_boundaries"],
+            "target_source": dataset_protocol.get("target_source", "local"),
         },
         "test_samples": len(test),
         "unique_target_months": len({m["target_dates"][0][:7] for m in test.metadata}),
@@ -489,6 +546,8 @@ def main():
             "protocol_version": 1,
             "dataset_schema_version": dataset_protocol["schema_version"],
             "index_alignment": dataset_protocol["index_alignment"],
+            "split_boundaries": dataset_protocol["split_boundaries"],
+            "target_source": dataset_protocol.get("target_source", "local"),
             "config": args.config,
             "seed": args.seed,
             "evaluation_report": str(output),

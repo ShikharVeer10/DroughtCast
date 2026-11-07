@@ -1,8 +1,9 @@
 from __future__ import annotations
+
 from pathlib import Path
+
 import pandas as pd
 import yaml
-
 
 CONFIG_PATH = Path("configs/config.yaml")
 SPEI_COLUMNS = [

@@ -10,8 +10,53 @@ import pandas as pd
 from scipy.stats import t as student_t
 
 from data.protocol import DATASET_PROTOCOL_VERSION
+from utils.artifacts import load_checkpoint
 
 SCALES = ["spei_3", "spei_6", "spei_12"]
+WINDOW_VARIANTS = {"window_3", "window_6", "window_12", "window_24"}
+
+
+def common_target_rmse(root_dir: Path, variants: list[str]) -> pd.DataFrame:
+    """Compute per-seed window ablation RMSE on shared site/target/scale/lead rows."""
+    summaries = []
+    for seed in sorted(
+        {
+            int(path.stem.rsplit("_", 1)[1])
+            for variant in variants
+            for path in (root_dir / variant).glob("test_predictions_seed_*.csv")
+        }
+    ):
+        by_variant = {}
+        for variant in variants:
+            path = root_dir / variant / f"test_predictions_seed_{seed}.csv"
+            if not path.is_file():
+                raise FileNotFoundError(f"Missing common-target predictions for {variant}, seed {seed}: {path}")
+            frame = pd.read_csv(path)
+            required = {"site", "target_month", "scale", "lead", "observed", "prediction_droughtcast"}
+            missing = required.difference(frame.columns)
+            if missing:
+                raise ValueError(f"{path} missing prediction columns: {sorted(missing)}")
+            keys = ["site", "target_month", "scale", "lead"]
+            if frame.duplicated(keys).any():
+                raise ValueError(f"{path} has duplicate site/target/scale/lead rows")
+            by_variant[variant] = frame.set_index(keys)[["observed", "prediction_droughtcast"]]
+        if not by_variant:
+            continue
+        common = set.intersection(*(set(frame.index) for frame in by_variant.values()))
+        if not common:
+            raise ValueError(f"No common test targets across window variants for seed {seed}")
+        common_index = pd.MultiIndex.from_tuples(sorted(common), names=["site", "target_month", "scale", "lead"])
+        observed_reference = None
+        for variant, frame in by_variant.items():
+            aligned = frame.loc[common_index]
+            if observed_reference is None:
+                observed_reference = aligned["observed"]
+            elif not np.allclose(aligned["observed"], observed_reference, equal_nan=True):
+                raise ValueError(f"Observed targets differ across variants for seed {seed}")
+            error = aligned["prediction_droughtcast"].to_numpy() - aligned["observed"].to_numpy()
+            for (site, target_month, scale, lead), value in zip(aligned.index, error):
+                summaries.append({"variant": variant, "seed": seed, "site": site, "target_month": target_month, "scale": scale, "lead": lead, "squared_error": float(value ** 2), "n_common_rows": len(aligned)})
+    return pd.DataFrame(summaries)
 
 
 def summarize_ablations(root_dir: Path):
@@ -25,6 +70,26 @@ def summarize_ablations(root_dir: Path):
     if not variants:
         print("No ablation variant directories found.")
         return
+
+    window_variants = sorted(set(variants) & WINDOW_VARIANTS)
+    if len(window_variants) > 1:
+        aligned = common_target_rmse(root_dir, window_variants)
+        aligned = aligned.groupby(["variant", "seed", "site", "target_month", "scale", "lead"], as_index=False).squared_error.mean()
+        aligned.to_csv(root_dir / "window_ablation_common_targets.csv", index=False)
+        aligned.groupby(["variant", "seed"], as_index=False).agg(
+            rmse=("squared_error", lambda x: float(np.sqrt(x.mean()))),
+            n_common_rows=("squared_error", "size"),
+        ).to_csv(root_dir / "window_ablation_common_rmse.csv", index=False)
+        print(f"Saved common-target window ablation metrics to {root_dir / 'window_ablation_common_targets.csv'}")
+
+    aligned_rmse = {}
+    if len(window_variants) > 1:
+        target_errors = pd.read_csv(root_dir / "window_ablation_common_targets.csv")
+        aligned_rmse = {
+            variant: group.groupby(["seed", "scale", "lead"]).squared_error.mean()
+            .pow(0.5).groupby("seed").mean().tolist()
+            for variant, group in target_errors.groupby("variant")
+        }
 
     table_rows = []
     for var in variants:
@@ -41,12 +106,15 @@ def summarize_ablations(root_dir: Path):
                 for lead in ["T+1", "T+2", "T+3", "T+4"]:
                     if scale in dcast and lead in dcast[scale]:
                         info = dcast[scale][lead]
-                        rmse_list.append(info.get("rmse", np.nan))
+                        if var not in WINDOW_VARIANTS or len(window_variants) <= 1:
+                            rmse_list.append(info.get("rmse", np.nan))
                         mae_list.append(info.get("mae", np.nan))
                         kge_list.append(info.get("kge_2012", np.nan))
                         nse_list.append(info.get("nse", np.nan))
                         skill_list.append(info.get("skill_vs_persistence", np.nan))
 
+        if var in aligned_rmse:
+            rmse_list = aligned_rmse[var]
         table_rows.append(
             {
                 "variant": var,
@@ -84,10 +152,9 @@ def summarize_ablations(root_dir: Path):
 
 
 def _current_report(report_path: Path, checkpoint_path: Path, data_hash: str):
-    import torch
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    checkpoint = load_checkpoint(checkpoint_path, map_location="cpu")
     if (
         report.get("dataset_protocol", {}).get("schema_version")
         != DATASET_PROTOCOL_VERSION

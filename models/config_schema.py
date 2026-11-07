@@ -1,13 +1,13 @@
 """Configuration validation for the DroughtCast forecaster."""
 
 from __future__ import annotations
-
+from data.protocol import SPLITS
 from typing import Any
 
 ALLOWED_TOP = {"experiment", "sites", "data", "model", "training"}
-ALLOWED_EXPERIMENT = {"name", "seed"}
+ALLOWED_EXPERIMENT = {"name", "seed", "primary_endpoint"}
 ALLOWED_DATA = {
-    "path", "metadata_path", "start_year", "end_year", "end_month", "features", "seq_len",
+    "path", "metadata_path", "start_year", "end_year", "end_month", "target_source", "features", "seq_len",
     "forecast_steps", "input_dim", "site_filter", "train_split", "val_split", "test_split", "target_scales", "split_boundaries",
 }
 ALLOWED_MODEL = {
@@ -43,6 +43,21 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
     _reject_unknown("model", cfg.get("model"), ALLOWED_MODEL)
     _reject_unknown("training", cfg.get("training"), ALLOWED_TRAINING)
     data, model = cfg.get("data", {}), cfg.get("model", {})
+    if data.get("target_source", "local") not in {"local", "speibase"}:
+        raise ValueError("data.target_source must be 'local' or 'speibase'")
+    configured_splits = data.get("split_boundaries")
+    if configured_splits is not None:
+        from data.protocol import SPLIT_BOUNDARIES
+
+        if configured_splits != SPLIT_BOUNDARIES:
+            raise ValueError(
+                "data.split_boundaries must match the versioned dates in data.protocol.SPLIT_BOUNDARIES"
+            )
+    endpoint = cfg.get("experiment", {}).get("primary_endpoint")
+    if endpoint is not None:
+        required_endpoint = {"scale", "leads", "metric", "baseline", "bootstrap_unit"}
+        if not isinstance(endpoint, dict) or required_endpoint - set(endpoint):
+            raise ValueError(f"experiment.primary_endpoint must contain {sorted(required_endpoint)}")
     features = data.get("features")
     if features is not None:
         if not isinstance(features, list) or not features:
@@ -53,3 +68,13 @@ def validate_config(cfg: dict[str, Any]) -> dict[str, Any]:
     if quantiles is not None and (len(quantiles) != 3 or quantiles != sorted(quantiles) or any(not 0 < q < 1 for q in quantiles)):
         raise ValueError("model.quantiles must be three increasing probabilities in (0,1)")
     return cfg
+
+    b = data.get("split_boundaries")
+    if b is not None and {k: b.get(k) for k in SPLITS} != SPLITS:
+     raise ValueError(f"data.split_boundaries must equal protocol.SPLITS: {SPLITS}")
+    if data.get("start_year") is not None:
+        years = int(SPLITS["train_end"][:4]) - int(data["start_year"]) + 1
+    if years < 30:
+        raise ValueError(f"SPEI calibration baseline is {years} years (<30); use start_year <= 1981")
+    if model.get("quantiles") and float(cfg.get("training", {}).get("extreme_weight", 1.0)) != 1.0:
+        warnings.warn("extreme_weight != 1.0 biases quantile estimates toward the dry tail", stacklevel=2)

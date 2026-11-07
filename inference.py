@@ -13,7 +13,11 @@ import yaml
 
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
-from utils.artifacts import architecture_fingerprint, validate_checkpoint_metadata
+from utils.artifacts import (
+    architecture_fingerprint,
+    load_checkpoint,
+    validate_checkpoint_metadata,
+)
 from utils.probability import (
     fit_isotonic_calibrator,
     quantile_risk_below_threshold,
@@ -25,7 +29,7 @@ SCALES = ("spei_3", "spei_6", "spei_12")
 class DroughtCastPredictor:
     def __init__(self,checkpoint_path: str | Path,config_path: str | Path | None = None,device: str = "cpu",):
         self.device = torch.device(device)
-        chk = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        chk = load_checkpoint(checkpoint_path, map_location=self.device)
         checkpoint_cfg = None
         if isinstance(chk, dict) and "config" in chk and chk["config"]:
             checkpoint_cfg = chk["config"]
@@ -206,9 +210,10 @@ def main():
         )
     training_data_path = Path(cfg["data"]["path"])
     validate_dataset_protocol(
-        training_data_path.parent / "dataset_metadata.json"
+        training_data_path.parent / "dataset_metadata.json",
+        cfg["data"].get("target_source", "local"),
     )
-    checkpoint = torch.load(chk_path, map_location="cpu", weights_only=False)
+    checkpoint = load_checkpoint(chk_path, map_location="cpu")
     validate_checkpoint_metadata(checkpoint, cfg, training_data_path)
     checkpoint_meta = checkpoint.get("artifact_metadata", {})
     training_hash = hashlib.sha256(training_data_path.read_bytes()).hexdigest()

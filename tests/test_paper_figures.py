@@ -7,7 +7,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 import pytest
-
 from paper.figure_style import DOUBLE_COLUMN_IN, SINGLE_COLUMN_IN
 
 ROOT = Path(__file__).parents[1]

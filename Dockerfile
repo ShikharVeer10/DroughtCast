@@ -1,6 +1,6 @@
-FROM python:3.11-slim
+FROM python:3.14.7-slim
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock
 COPY . .
 CMD ["python", "-m", "data.build_dataset"]

@@ -2,6 +2,12 @@
 experiment:
   name: maharashtra_droughtcast
   seed: 42
+  primary_endpoint:
+    scale: spei_3
+    leads: [3, 4]
+    metric: mse_skill_vs_persistence
+    baseline: persistence
+    bootstrap_unit: site_year
 
 sites:
   aurangabad:
@@ -70,6 +76,7 @@ data:
   start_year: 1990
   end_year: 2026
   end_month: 10
+  target_source: local
   site_filter:
     - akola
     - amravati
@@ -103,12 +110,12 @@ data:
   seq_len: 6
   forecast_steps: 4
   train_split: "1990-2010"
-  val_split: "2013-2014"
+  val_split: "2011-2015"
   test_split: "2017-2025"
   split_boundaries:
     train_end: "2010-12-01"
-    val_start: "2013-01-01"
-    val_end: "2014-12-01"
+    val_start: "2011-01-01"
+    val_end: "2015-12-01"
     test_start: "2017-01-01"
     test_end: "2025-12-01"
 

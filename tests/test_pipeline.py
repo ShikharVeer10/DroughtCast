@@ -10,10 +10,13 @@ from models.forecaster import MultiScaleForecaster
 
 def test_split_dates_and_gap():
     assert split_for_date(pd.Timestamp("2010-12-01")) == "train"
-    assert split_for_date(pd.Timestamp("2011-06-01")) is None
+    assert split_for_date(pd.Timestamp("2011-12-01")) is None
     assert split_for_date(pd.Timestamp("2012-01-01")) == "val"
+    assert split_for_date(pd.Timestamp("2015-12-01")) == "val"
     assert split_for_date(pd.Timestamp("2016-06-01")) is None
     assert split_for_date(pd.Timestamp("2017-01-01")) == "test"
+    assert split_for_date(pd.Timestamp("2025-12-01")) == "test"
+    assert split_for_date(pd.Timestamp("2026-01-01")) is None
 
 
 def test_normalizer_uses_given_training_rows_and_preserves_nan():

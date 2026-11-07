@@ -2,7 +2,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pytest
-
 from paper.figure_style import (
     DOUBLE_COLUMN_IN,
     SINGLE_COLUMN_IN,

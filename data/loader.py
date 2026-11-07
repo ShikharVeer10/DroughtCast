@@ -12,7 +12,12 @@ import torch
 
 from data.dataset import DroughtResearchDataset
 from data.preprocessing import ClimateNormalizer
-from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
+from data.protocol import (
+    DATASET_PROTOCOL_VERSION,
+    INDEX_ALIGNMENT,
+    SPLIT_BOUNDARIES,
+    SPLITS,
+)
 from data.quality import validate_site_table
 
 TARGETS = ["spei_3", "spei_6", "spei_12"]
@@ -30,7 +35,9 @@ DEFAULT_FEATURES = [
     "spei_6_obs",
     "spei_12_obs",
 ]
-def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json") -> dict:
+def validate_dataset_protocol(
+    path: str | Path = "data/dataset_metadata.json", target_source: str | None = None
+) -> dict:
     """Reject datasets built before the current leakage-alignment protocol."""
     metadata_path = Path(path)
     if not metadata_path.is_file():
@@ -41,6 +48,8 @@ def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json") -
     if (
         metadata.get("schema_version") != DATASET_PROTOCOL_VERSION
         or metadata.get("index_alignment") != INDEX_ALIGNMENT
+        or metadata.get("split_boundaries") != SPLIT_BOUNDARIES
+        or (target_source is not None and metadata.get("target_source", "local") != target_source)
     ):
         raise RuntimeError(
             f"Dataset at {metadata_path} predates the current teleconnection alignment. "
@@ -50,14 +59,7 @@ def validate_dataset_protocol(path: str | Path = "data/dataset_metadata.json") -
 
 
 def split_for_date(date: pd.Timestamp) -> str | None:
-    date = pd.Timestamp(date)
-    if date <= pd.Timestamp("2010-12-01"):
-        return "train"
-    if pd.Timestamp("2012-01-01") <= date <= pd.Timestamp("2015-12-01"):
-        return "val"
-    if date >= pd.Timestamp("2017-01-01"):
-        return "test"
-    return None
+    return split_for_date_with_boundaries(date, **SPLIT_BOUNDARIES)
 
 
 def split_for_date_with_boundaries(date: pd.Timestamp, train_end: str, val_start: str, val_end: str, test_start: str, test_end: str | None = None) -> str | None:
@@ -160,7 +162,7 @@ def load_site_table(
         dates = pd.to_datetime(frame["date"])
         source_train = frame[
             (~frame["region"].isin(holdout_regions))
-            & (dates <= pd.Timestamp("2010-12-01"))
+            & (dates <= pd.Timestamp(SPLITS["train_end"]))
         ]
         global_normalizer = ClimateNormalizer().fit(
             source_train[features].apply(pd.to_numeric, errors="coerce").to_numpy()
@@ -302,10 +304,18 @@ def load_site_table(
                 windows[split]["static"].append(
                     np.asarray([latitude, aridity], dtype=np.float32)
                 )
+    split_summary = {
+        name: {
+            "n_windows": len(entries["metadata"]),
+            "first_target": min((m["target_dates"][0] for m in entries["metadata"]), default=None),
+            "last_target": max((m["target_dates"][-1] for m in entries["metadata"]), default=None),
+        }
+        for name, entries in windows.items()
+    }
     if metadata_path:
         Path(metadata_path).parent.mkdir(parents=True, exist_ok=True)
         Path(metadata_path).write_text(
-            json.dumps({"features": features, "normalizers": normalizers}, indent=2),
+            json.dumps({"features": features, "normalizers": normalizers, "split_summary": split_summary, "split_rule": "all_inputs_and_targets_in_one_split"}, indent=2),
             encoding="utf-8",
         )
     result = {}

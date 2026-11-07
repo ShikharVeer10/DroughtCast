@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 import hashlib
 import json
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -150,7 +152,7 @@ def main() -> None:
   else:
     meta = {}
   meta["sha256"] = sha256_hash
-  meta["rows"] = int(len(df))
+  meta["rows"] = len(df)
   meta["sites"] = configured_sites
   meta["schema_version"] = 4
   from data.protocol import INDEX_ALIGNMENT
@@ -179,7 +181,7 @@ def main() -> None:
   val_dir.mkdir(parents=True, exist_ok=True)
   validation_report = {
       "study_area": "Maharashtra, India (4 IMD Subdivisions, 12 Benchmark Stations)",
-      "total_site_month_rows": int(len(df)),
+      "total_site_month_rows": len(df),
       "missing_value_count": int(df[meta["features"]].isna().sum().sum()),
       "physical_bounds_check": {
           "GWETTOP_range": [

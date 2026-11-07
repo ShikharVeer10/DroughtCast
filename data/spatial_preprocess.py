@@ -10,8 +10,8 @@ Strict scientific constraints:
 - Predictors available at forecast time T cannot contain future information (> T).
 - Target leakage prevention: SPEIbase observed targets are never used as input features.
   Historical SPEI features (spei_3_obs, etc.) are unshifted observations available at time T.
-- Temporal splits: train (<= 2010-12-01), validation (2012-01-01 to 2015-12-01),
-  and test (>= 2017-01-01) with gap periods strictly preserved.
+- Temporal splits are imported from data.protocol.SPLIT_BOUNDARIES and shared
+  with site-level training and evaluation.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from data.protocol import SPLIT_BOUNDARIES
 from data.spatial import SCALES
 
 logger = logging.getLogger(__name__)
@@ -90,11 +91,13 @@ def enforce_leakage_controls(
 
 def verify_temporal_splits(dates: pd.DatetimeIndex) -> dict[str, int]:
     """Check dates against train/val/test splits and gap periods."""
-    train_mask = dates <= pd.Timestamp("2010-12-01")
-    val_mask = (dates >= pd.Timestamp("2012-01-01")) & (
-        dates <= pd.Timestamp("2015-12-01")
+    train_mask = dates <= pd.Timestamp(SPLIT_BOUNDARIES["train_end"])
+    val_mask = (dates >= pd.Timestamp(SPLIT_BOUNDARIES["val_start"])) & (
+        dates <= pd.Timestamp(SPLIT_BOUNDARIES["val_end"])
     )
-    test_mask = dates >= pd.Timestamp("2017-01-01")
+    test_mask = (dates >= pd.Timestamp(SPLIT_BOUNDARIES["test_start"])) & (
+        dates <= pd.Timestamp(SPLIT_BOUNDARIES["test_end"])
+    )
     gap_mask = ~(train_mask | val_mask | test_mask)
 
     counts = {

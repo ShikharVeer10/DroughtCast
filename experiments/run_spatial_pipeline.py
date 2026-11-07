@@ -21,7 +21,6 @@ import logging
 import sys
 from pathlib import Path
 
-import torch
 import xarray as xr
 import yaml
 
@@ -43,7 +42,7 @@ from experiments.evaluate_spatial_pipeline import evaluate_spatial_evidence
 from experiments.generate_spatial_tables import generate_tables
 from experiments.plot_spatial_pipeline import generate_all_spatial_figures
 from models.forecaster import DroughtCast
-from utils.artifacts import config_hash
+from utils.artifacts import config_hash, load_checkpoint
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
@@ -148,7 +147,7 @@ def execute_pipeline_from_harmonized(
 
     if checkpoint_path and Path(checkpoint_path).is_file():
         logger.info(f"Loading checkpoint from: {checkpoint_path}")
-        state = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        state = load_checkpoint(checkpoint_path, map_location="cpu")
         model.load_state_dict(state["model"])
     else:
         logger.info("Using initialized model architecture for inference")

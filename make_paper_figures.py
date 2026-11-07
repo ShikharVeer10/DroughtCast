@@ -17,9 +17,6 @@ from matplotlib.colors import BoundaryNorm, LinearSegmentedColormap, ListedColor
 from matplotlib.lines import Line2D
 from matplotlib.patches import FancyBboxPatch
 from matplotlib.path import Path as MplPath
-from shapely import wkb
-from shapely.geometry import Point, box
-
 from paper.figure_style import (
     OKABE_ITO,
     SINGLE_COLUMN_IN,
@@ -27,6 +24,10 @@ from paper.figure_style import (
     audit_figure,
     save_figure,
 )
+from shapely import wkb
+from shapely.geometry import Point, box
+
+from data.protocol import SPLIT_BOUNDARIES
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "paper" / "figures"
@@ -583,6 +584,7 @@ def _save(fig, name: str, data: pd.DataFrame, *, kind="line"):
                     else [],
                 ),
                 "dataset_schema_version": schema,
+                "split_boundaries": SPLIT_BOUNDARIES,
                 "test_period": data.attrs.get("test_period"),
                 "source_rows": len(data),
                 "source_data_file": f"data/{name}.csv",

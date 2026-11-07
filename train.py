@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 
 from data.loader import load_site_table, validate_dataset_protocol
 from models.forecaster import MultiScaleForecaster
-from utils.artifacts import artifact_metadata
+from utils.artifacts import artifact_metadata, checkpoint_metadata_path, sha256_file
 
 
 def seed_everything(seed: int):
@@ -180,7 +180,10 @@ def main():
         raise FileNotFoundError(
             f"Real dataset not found at {cfg['data']['path']}. Run `python -m data.build_dataset` first."
         )
-    validate_dataset_protocol(Path(cfg["data"]["path"]).parent / "dataset_metadata.json")
+    validate_dataset_protocol(
+        Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
+        cfg["data"].get("target_source", "local"),
+    )
     data = load_site_table(
         cfg["data"]["path"],
         cfg["data"].get("features"),
@@ -289,13 +292,20 @@ def main():
                 "task_log_vars": task_log_vars.detach().cpu()
                 if task_log_vars is not None
                 else None,
+            }
+            torch.save(state, checkpoint)
+            sidecar = {
                 "config": cfg,
                 "seed": seed,
                 "best_val_mse": best,
                 "best_val_loss": va_loss,
+                "selected_epoch": epoch + 1,
                 "artifact_metadata": artifact_metadata(cfg, cfg["data"]["path"], seed),
             }
-            torch.save(state, checkpoint)
+            sidecar["checkpoint_sha256"] = sha256_file(checkpoint)
+            checkpoint_metadata_path(checkpoint).write_text(
+                json.dumps(sidecar, indent=2), encoding="utf-8"
+            )
         else:
             stale += 1
         if stale >= cfg["training"].get("early_stopping_patience", 12):

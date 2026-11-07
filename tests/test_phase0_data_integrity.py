@@ -249,5 +249,5 @@ def test_stale_index_is_not_made_current_by_shared_calendar_index():
 
     with patch("data.build_dataset.fetch_power", return_value=frame):
         result = build_site("x", {"lat": 10.0, "region": "test"}, 2000, 2001, None, "nonparametric", indices)
-    stale = result.loc[pd.Timestamp("2001-05-01")]
+    stale = result.loc[pd.to_datetime(result["date"]) == pd.Timestamp("2001-05-01")].iloc[0]
     assert stale[["oni", "dmi", "nao", "pdo"]].isna().all()

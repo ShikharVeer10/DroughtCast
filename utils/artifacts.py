@@ -46,6 +46,8 @@ def architecture_fingerprint(config: dict) -> str:
         "seq_len": data.get("seq_len"),
         "forecast_steps": data.get("forecast_steps"),
         "target_scales": list(data.get("target_scales") or ["spei_3", "spei_6", "spei_12"]),
+        "target_source": data.get("target_source", "local"),
+        "period": [data.get("start_year"), data.get("end_year"), data.get("end_month", 12)],
         "encoder": model.get("encoder", "lstm"),
         "hidden_dim_1": model.get("hidden_dim_1", 64),
         "hidden_dim_2": model.get("hidden_dim_2", 32),
@@ -81,8 +83,34 @@ def artifact_metadata(
         "sites": sorted((config.get("sites") or {}).keys()),
         "split_boundaries": dict(config.get("data", {}).get("split_boundaries") or {}),
         "target_scales": list(config.get("data", {}).get("target_scales") or ["spei_3", "spei_6", "spei_12"]),
+        "target_source": config.get("data", {}).get("target_source", "local"),
+        "period": [
+            config.get("data", {}).get("start_year"),
+            config.get("data", {}).get("end_year"),
+            config.get("data", {}).get("end_month", 12),
+        ],
         "quantiles": list(config.get("model", {}).get("quantiles") or []),
     }
+
+
+def checkpoint_metadata_path(checkpoint_path: str | Path) -> Path:
+    return Path(checkpoint_path).with_suffix(".metadata.json")
+
+
+def load_checkpoint(checkpoint_path: str | Path, map_location: str | torch.device = "cpu") -> dict:
+    """Load tensor-only checkpoint weights and merge the JSON provenance sidecar."""
+    checkpoint_path = Path(checkpoint_path)
+    state = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    if not isinstance(state, dict):
+        raise ValueError(f"Checkpoint must contain a mapping: {checkpoint_path}")
+    metadata_path = checkpoint_metadata_path(checkpoint_path)
+    if metadata_path.is_file():
+        sidecar = json.loads(metadata_path.read_text(encoding="utf-8"))
+        state.update({key: value for key, value in sidecar.items() if key != "checkpoint_sha256"})
+        expected_hash = sidecar.get("checkpoint_sha256")
+        if expected_hash and sha256_file(checkpoint_path) != expected_hash:
+            raise ValueError(f"Checkpoint was modified after its metadata was written: {checkpoint_path}")
+    return state
 
 
 def validate_checkpoint_metadata(
@@ -116,6 +144,12 @@ def validate_checkpoint_metadata(
         "target_scales": list(config.get("data", {}).get("target_scales") or ["spei_3", "spei_6", "spei_12"]),
         "quantiles": list(config.get("model", {}).get("quantiles") or []),
         "split_boundaries": dict(config.get("data", {}).get("split_boundaries") or {}),
+        "target_source": config.get("data", {}).get("target_source", "local"),
+        "period": [
+            config.get("data", {}).get("start_year"),
+            config.get("data", {}).get("end_year"),
+            config.get("data", {}).get("end_month", 12),
+        ],
     }
     for key, expected_value in checks.items():
         if artifact.get(key) != expected_value:

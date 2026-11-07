@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import warnings
 from pathlib import Path
 from statistics import NormalDist
 from typing import Any
@@ -11,7 +13,12 @@ import numpy as np
 import pandas as pd
 import requests
 
-from data.protocol import DATASET_PROTOCOL_VERSION, INDEX_ALIGNMENT
+from data.protocol import (
+    DATASET_PROTOCOL_VERSION,
+    INDEX_ALIGNMENT,
+    SPEI_CALIBRATION_END,
+    SPLIT_BOUNDARIES,
+)
 from data.quality import target_quality_report, validate_target_quality
 
 POWER_URL = "https://power.larc.nasa.gov/api/temporal/monthly/point"
@@ -208,6 +215,7 @@ def _parse_noaa_text(name: str, text: str) -> pd.Series:
 
 def fetch_indices(start: str, end: str, cache: Path, refresh: bool = False) -> pd.DataFrame:
     columns = []
+    provenance = {}
     cache.mkdir(parents=True, exist_ok=True)
     for name, url in NOAA.items():
         path = cache / f"noaa_{name}.txt"
@@ -223,9 +231,26 @@ def fetch_indices(start: str, end: str, cache: Path, refresh: bool = False) -> p
                 ) from exc
             text = response.text
             path.write_text(text, encoding="utf-8")
+            path.with_suffix(".metadata.json").write_text(
+                json.dumps({
+                    "source_url": url,
+                    "retrieved_utc": pd.Timestamp.now(tz="UTC").isoformat(),
+                    "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                }, indent=2), encoding="utf-8",
+            )
+        sidecar = path.with_suffix(".metadata.json")
+        if not sidecar.is_file():
+            sidecar.write_text(json.dumps({
+                "source_url": url,
+                "retrieval_date": None,
+                "unit_validation": "not applicable for index; legacy cache retrieval is unknown",
+            }, indent=2), encoding="utf-8")
+        provenance[name] = json.loads(sidecar.read_text(encoding="utf-8"))
         columns.append(_parse_noaa_text(name, text))
     index = pd.concat(columns, axis=1, sort=True).sort_index()
-    return index.loc[start:end]
+    result = index.loc[start:end]
+    result.attrs["provenance"] = provenance
+    return result
 
 
 def mid_month_doy(index: pd.DatetimeIndex) -> np.ndarray:
@@ -309,7 +334,7 @@ def _nonparametric_z_scores(values: np.ndarray, calibration: np.ndarray, max_abs
 
 
 def _standardize_accumulation(
-    balance: pd.Series, scale: int, method: str, calibration_end: str = "2010-12-01"
+    balance: pd.Series, scale: int, method: str, calibration_end: str = SPEI_CALIBRATION_END
 ) -> pd.Series:
     accum = balance.rolling(scale, min_periods=scale).sum()
     result = pd.Series(np.nan, index=balance.index, dtype=float)
@@ -560,6 +585,28 @@ def ingest_speibase(
     return result
 
 
+def ingest_speibase_points(computed: pd.DataFrame, points_path: Path) -> pd.DataFrame:
+    """Use a previously extracted nearest-cell SPEIbase points artifact."""
+    points = pd.read_csv(points_path, parse_dates=["date"])
+    reference_cols = [f"spei_{scale}_reference" for scale in (3, 6, 12)]
+    missing = {"site", "date", *reference_cols}.difference(points.columns)
+    if missing:
+        raise ValueError(f"SPEIbase points artifact lacks columns: {sorted(missing)}")
+    points["site"] = points["site"].astype(str).str.lower().str.strip()
+    reference = points[["site", "date", *reference_cols]].rename(
+        columns={f"spei_{scale}_reference": f"spei_{scale}" for scale in (3, 6, 12)}
+    )
+    if reference.duplicated(["site", "date"]).any():
+        raise ValueError("SPEIbase points artifact has duplicate site-month rows")
+    left = computed.drop(columns=[f"spei_{scale}" for scale in (3, 6, 12)], errors="ignore")
+    result = left.merge(reference, on=["site", "date"], how="left", validate="one_to_one")
+    for scale in (3, 6, 12):
+        observed = f"spei_{scale}_obs"
+        if observed in result:
+            result[observed] = result[f"spei_{scale}"]
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/config.yaml")
@@ -586,6 +633,10 @@ def main() -> None:
     parser.add_argument(
         "--speibase-variable", help="Optional SPEIbase NetCDF variable name"
     )
+    parser.add_argument(
+        "--speibase-points", type=Path,
+        help="Previously extracted matched monthly nearest-cell SPEIbase artifact",
+    )
     args = parser.parse_args()
     cfg = (
         json.loads(Path(args.config).read_text(encoding="utf-8"))
@@ -602,8 +653,20 @@ def main() -> None:
     start = args.start if args.start is not None else int(data_cfg.get("start_year", 1981))
     end = args.end if args.end is not None else int(data_cfg.get("end_year", 2024))
     end_month = args.end_month if args.end_month is not None else int(data_cfg.get("end_month", 12))
+    cal_years = pd.Timestamp(SPEI_CALIBRATION_END).year - start + 1
+    if cal_years < 30:
+        warnings.warn(
+            f"SPEI calibration baseline is {cal_years} years (<30); use --start 1981 or justify.",
+            stacklevel=2,
+        )
     if end < start or not 1 <= end_month <= 12:
         raise ValueError("Invalid period: end_year must follow start_year and end_month must be 1..12")
+    target_source = str(data_cfg.get("target_source", "local")).lower()
+    if target_source not in {"local", "speibase"}:
+        raise ValueError("data.target_source must be 'local' or 'speibase'")
+    if target_source == "speibase" and args.speibase is None and args.speibase_points is None:
+        raise ValueError("data.target_source=speibase requires --speibase DIRECTORY or --speibase-points CSV")
+    output = Path(args.output or data_cfg.get("path", "data/monthly_sites.csv"))
     cache = Path(args.cache)
     indices = fetch_indices(f"{start}-01", f"{end}-{end_month:02d}", cache, args.refresh_indices)
     daily_monthly = load_daily_monthly(Path("data/maharashtra_daily_raw.csv"), end, end_month)
@@ -638,7 +701,7 @@ def main() -> None:
         from data.validate_speibase import compare_netcdf, speibase_points
 
         validation = compare_netcdf(data, args.speibase, args.speibase_variable, sites)
-        validation_path = Path("results/speibase_validation.csv")
+        validation_path = output.parent / "speibase_validation.csv"
         validation_path.parent.mkdir(parents=True, exist_ok=True)
         validation.to_csv(validation_path, index=False)
         points = data[["site", "date", "spei_3", "spei_6", "spei_12"]].merge(
@@ -662,10 +725,12 @@ def main() -> None:
                 .assign(scale=scale)
             )
         pd.concat(point_rows, ignore_index=True).to_csv(
-            Path("results/speibase_validation_points.csv"), index=False
+            output.parent / "speibase_validation_points.csv", index=False
         )
-        data = ingest_speibase(data, args.speibase, sites, args.speibase_variable)
-    output = Path(args.output or cfg.get("data", {}).get("path", "data/monthly_sites.csv"))
+        if target_source == "speibase":
+            data = ingest_speibase(data, args.speibase, sites, args.speibase_variable)
+    elif target_source == "speibase":
+        data = ingest_speibase_points(data, args.speibase_points)
     output.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(output, index=False)
     quality = target_quality_report(data)
@@ -673,15 +738,33 @@ def main() -> None:
     (output.parent / "target_quality.json").write_text(
         json.dumps(quality, indent=2, allow_nan=True), encoding="utf-8"
     )
+    power_cache_provenance = {}
+    for site in sites:
+        cache_sidecar = cache / f"{site}_power_{start}_{end}.metadata.json"
+        if cache_sidecar.is_file():
+            power_cache_provenance[site] = json.loads(
+                cache_sidecar.read_text(encoding="utf-8")
+            )
+        else:
+            power_cache_provenance[site] = {
+                "unit_validation": "not verified; cache sidecar absent",
+                "retrieved_utc": None,
+            }
     (output.parent / "dataset_metadata.json").write_text(
         json.dumps(
             {
                 "schema_version": DATASET_PROTOCOL_VERSION,
                 "source": "NASA POWER monthly point with daily-derived fallback for complete months; NOAA CPC/PSL teleconnection indices",
+                "source_urls": {
+                    "nasa_power_monthly": POWER_URL,
+                    **{f"noaa_{name}": url for name, url in NOAA.items()},
+                },
                 "period": [start, end],
                 "latest_complete_month": f"{end}-{end_month:02d}",
                 "spei_method": args.spei_method,
-                "spei_calibration_period": [start, "2010-12-01"],
+                "spei_calibration_period": [start, SPEI_CALIBRATION_END],
+                "target_source": target_source,
+                "split_boundaries": SPLIT_BOUNDARIES,
                 "pet_method": "Monthly Hargreaves-Samani approximation using POWER T2M, T2M_MAX, and T2M_MIN monthly aggregates",
                 "sites": sites,
                 "climate_variables": POWER_VARS + ["GWETTOP", "GWETROOT"],
@@ -690,13 +773,15 @@ def main() -> None:
                 "index_alignment": INDEX_ALIGNMENT,
                 "index_last_source_month": {name: str(indices[name].dropna().index.max().date()) if name in indices and indices[name].notna().any() else None for name in NOAA},
                 "index_max_staleness_months": INDEX_ALIGNMENT.get("max_staleness_months", 12),
+                "index_cache_provenance": indices.attrs.get("provenance", {}),
+                "power_cache_provenance": power_cache_provenance,
                 "input_units": {
                     "PRECTOTCORR": "mm/day, converted to monthly total by multiplying calendar days",
                     "temperature": "degC", "WS10M": "m/s",
-                    "ALLSKY_SFC_SW_DWN": "verified from NASA POWER response metadata; raw cache sidecar stores units",
+                    "ALLSKY_SFC_SW_DWN": "daily radiation energy; fresh response unit and legacy-cache verification status are recorded per site",
                 },
-                "source_retrieved_utc": pd.Timestamp.now(tz="UTC").isoformat(),
-                "speibase": str(args.speibase) if args.speibase else None,
+                "dataset_built_utc": pd.Timestamp.now(tz="UTC").isoformat(),
+                "speibase": str(args.speibase or args.speibase_points) if (args.speibase or args.speibase_points) else None,
                 "target_quality_report": str(output.parent / "target_quality.json"),
             },
             indent=2,

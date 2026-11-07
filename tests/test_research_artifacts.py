@@ -1,11 +1,15 @@
+import hashlib
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from data.build_dataset import _nonparametric_z_scores
 from data.protocol import DATASET_PROTOCOL_VERSION
 from data.quality import target_quality_report
-from utils.artifacts import validate_checkpoint_metadata
+from utils.artifacts import load_checkpoint, validate_checkpoint_metadata
 
 
 def test_nonparametric_transform_bounds_duplicate_tail_values():
@@ -59,3 +63,23 @@ def test_checkpoint_without_current_dataset_schema_is_rejected():
     }
     with pytest.raises(ValueError, match="dataset schema is incompatible"):
         validate_checkpoint_metadata(checkpoint, config)
+
+
+def test_tensor_checkpoint_loads_metadata_from_json_sidecar(tmp_path):
+    path = tmp_path / "model.pt"
+    torch.save({"model": {"weight": torch.tensor([1.0])}}, path)
+    metadata_path = path.with_suffix(".metadata.json")
+    metadata_path.write_text(
+        json.dumps({
+            "config": {"data": {"features": ["x"]}},
+            "artifact_metadata": {"dataset_schema_version": DATASET_PROTOCOL_VERSION},
+            "checkpoint_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        }),
+        encoding="utf-8",
+    )
+    state = load_checkpoint(path)
+    assert state["model"]["weight"].item() == pytest.approx(1.0)
+    assert state["artifact_metadata"]["dataset_schema_version"] == DATASET_PROTOCOL_VERSION
+    torch.save({"model": {"weight": torch.tensor([2.0])}}, path)
+    with pytest.raises(ValueError, match="modified after its metadata"):
+        load_checkpoint(path)
