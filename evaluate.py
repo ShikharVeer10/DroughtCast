@@ -11,6 +11,10 @@ import torch
 import yaml
 
 from data.loader import load_site_table, validate_dataset_protocol
+from data.preprocessing import (
+    DEFAULT_NORMALIZER_METADATA_PATH,
+    validate_configured_model_features,
+)
 from evaluation.baselines import fit_classical, persistence, seasonal_predictions
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import load_checkpoint, validate_checkpoint_metadata
@@ -98,6 +102,7 @@ def main():
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    validate_configured_model_features(cfg["data"].get("features"), "evaluation config")
     dataset_protocol = validate_dataset_protocol(
     Path(cfg["data"]["path"]).parent / "dataset_metadata.json",
     cfg["data"].get("target_source", "local"),
@@ -108,7 +113,7 @@ def main():
         cfg["data"].get("features"),
         cfg["data"]["seq_len"],
         cfg["data"]["forecast_steps"],
-        cfg["data"].get("metadata_path", "data/meta.json"),
+        cfg["data"].get("metadata_path", DEFAULT_NORMALIZER_METADATA_PATH),
         args.holdout_region,
         cfg["data"].get("site_filter"),
         cfg["model"].get("input_extras"),

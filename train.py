@@ -10,6 +10,11 @@ import yaml
 from torch.utils.data import DataLoader
 
 from data.loader import load_site_table, validate_dataset_protocol
+from data.preprocessing import (
+    DEFAULT_NORMALIZER_METADATA_PATH,
+    validate_configured_model_features,
+)
+from data.protocol import MODEL_FEATURES
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import artifact_metadata, checkpoint_metadata_path, sha256_file
 
@@ -37,11 +42,38 @@ def masked_loss(prediction,target,mask,extreme_weight=1.0,extreme_threshold=-1.5
 
 
 def pinball_loss(prediction, target, mask, quantiles, extreme_weight=1.0, extreme_threshold=-1.5):
+    if prediction.ndim != target.ndim + 1 or prediction.shape[:-1] != target.shape:
+        raise ValueError(
+            "prediction must have shape target.shape + (n_quantiles,); "
+            f"got prediction={tuple(prediction.shape)}, target={tuple(target.shape)}"
+        )
+    if mask.shape != target.shape:
+        raise ValueError(
+            f"mask shape must match target shape; got mask={tuple(mask.shape)}, "
+            f"target={tuple(target.shape)}"
+        )
+    valid_mask = mask.to(device=target.device, dtype=torch.bool)
+    invalid_targets = valid_mask & ~torch.isfinite(target)
+    if torch.any(invalid_targets):
+        raise ValueError("Unmasked targets must be finite")
+    expanded_mask = valid_mask.unsqueeze(-1)
+    invalid_predictions = expanded_mask & ~torch.isfinite(prediction)
+    if torch.any(invalid_predictions):
+        raise ValueError("Predictions at unmasked targets must be finite")
+
+    # Replace invalid masked cells before subtraction/multiplication. Multiplying
+    # an already-computed NaN/Inf loss by zero still produces NaN in PyTorch.
+    safe_target = torch.where(valid_mask, target, torch.zeros_like(target))
+    safe_prediction = torch.where(
+        expanded_mask, prediction, torch.zeros_like(prediction)
+    )
     q = torch.as_tensor(quantiles, dtype=prediction.dtype, device=prediction.device).view(1, 1, -1)
-    error = target.unsqueeze(-1) - prediction
+    error = safe_target.unsqueeze(-1) - safe_prediction
     losses = torch.maximum(q * error, (q - 1.0) * error)
-    weights = torch.where(target <= extreme_threshold, extreme_weight, 1.0).unsqueeze(-1)
-    valid = mask.unsqueeze(-1).to(prediction.dtype) * weights
+    weights = torch.where(
+        safe_target <= extreme_threshold, extreme_weight, 1.0
+    ).unsqueeze(-1)
+    valid = expanded_mask.to(prediction.dtype) * weights
     return (losses * valid).sum() / valid.sum().clamp_min(1.0)
 
 
@@ -170,6 +202,11 @@ def main():
     args = parser.parse_args()
     cfg = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     data_cfg, training_cfg = cfg["data"], cfg["training"]
+    validate_configured_model_features(data_cfg.get("features"), "training config")
+    if int(cfg["model"].get("input_dim", -1)) != len(MODEL_FEATURES):
+        raise ValueError(
+            f"model.input_dim must equal the {len(MODEL_FEATURES)} configured protocol features"
+        )
     data_cfg.setdefault("seq_len", data_cfg.get("lookback", 6))
     data_cfg.setdefault("forecast_steps", data_cfg.get("horizon", 4))
     training_cfg.setdefault("learning_rate", training_cfg.get("lr", 1e-3))
@@ -190,7 +227,7 @@ def main():
         cfg["data"].get("features"),
         cfg["data"]["seq_len"],
         cfg["data"]["forecast_steps"],
-        cfg["data"].get("metadata_path", "data/meta.json"),
+        cfg["data"].get("metadata_path", DEFAULT_NORMALIZER_METADATA_PATH),
         args.holdout_region,
         cfg["data"].get("site_filter"),
         cfg["model"].get("input_extras"),

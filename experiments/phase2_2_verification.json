@@ -1,0 +1,17 @@
+{
+  "focused_tests": {
+    "passed": true,
+    "summary": "12 passed in 30.63s; Phase 2.2 neural tests",
+    "command": ".\\.venv\\Scripts\\python.exe -m pytest -q tests/test_phase2_2_neural.py --basetemp C:\\Users\\shikh\\AppData\\Local\\Temp\\droughtcast_phase2_2_final_focused3"
+  },
+  "full_pytest": {
+    "passed": true,
+    "summary": "173 passed in 126.34s",
+    "command": ".\\.venv\\Scripts\\python.exe -m pytest -q --basetemp C:\\Users\\shikh\\AppData\\Local\\Temp\\droughtcast_phase2_2_full_final2"
+  },
+  "ruff": {
+    "passed": true,
+    "summary": "All checks passed on data/loader.py, experiments/run_phase2_2_neural.py, and tests/test_phase2_2_neural.py",
+    "command": ".\\.venv\\Scripts\\python.exe -m ruff check data/loader.py experiments/run_phase2_2_neural.py tests/test_phase2_2_neural.py"
+  }
+}

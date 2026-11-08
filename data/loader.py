@@ -9,7 +9,13 @@ import pandas as pd
 import torch
 
 from data.dataset import DroughtResearchDataset
-from data.preprocessing import ClimateNormalizer
+from data.preprocessing import (
+    NORMALIZER_METADATA_SCHEMA_VERSION,
+    ClimateNormalizer,
+    normalizer_provenance,
+    replace_invalid_sentinels,
+    validate_feature_order,
+)
 from data.protocol import (
     DATASET_PROTOCOL_VERSION,
     INDEX_ALIGNMENT,
@@ -78,9 +84,28 @@ def load_site_table(
     residual_heads: bool = False,
     site_specs: dict[str, dict[str, Any]] | None = None,
     split_config: dict[str, str] | None = None,
+    include_splits: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, DroughtResearchDataset]:
     frame = pd.read_csv(path, parse_dates=["date"])
-    frame = frame.replace([-999.0, -99.0, -9999.0, -32768.0], np.nan)
+    restrict_to_splits = include_splits is not None
+    requested_splits = tuple(include_splits or ("train", "val", "test"))
+    split_order = ("train", "val", "test")
+    if not requested_splits or requested_splits != split_order[: len(requested_splits)]:
+        raise ValueError(
+            "include_splits must be a non-empty chronological prefix of "
+            "('train', 'val', 'test')"
+        )
+    effective_splits = {**SPLITS, **(split_config or {})}
+    split_end = {
+        "train": effective_splits["train_end"],
+        "val": effective_splits["val_end"],
+        "test": effective_splits["test_end"],
+    }[requested_splits[-1]]
+    # Exclude later records before sentinel handling, quality validation,
+    # normalization, and window construction during validation-only work.
+    if restrict_to_splits:
+        frame = frame.loc[pd.to_datetime(frame["date"]) <= pd.Timestamp(split_end)].copy()
+    frame = replace_invalid_sentinels(frame)
     frame["site"] = frame["site"].astype(str).str.strip().str.lower()
     if site_filter is not None:
         allowed_sites = {str(s).lower() for s in site_filter}
@@ -119,6 +144,7 @@ def load_site_table(
         features.extend(["month_sin", "month_cos"])
     if "water_balance" in input_extras:
         features.append("water_balance")
+    validate_feature_order(features, features, "loader")
     if not features:
         raise ValueError("No input features found")
     if set(features).difference(frame.columns):
@@ -160,6 +186,7 @@ def load_site_table(
             source_train[features].apply(pd.to_numeric, errors="coerce").to_numpy()
         )
     normalizers: dict[str, Any] = {}
+    training_dates_by_site: dict[str, dict[str, str | int]] = {}
     windows = {
         name: {
             "X": [],
@@ -204,10 +231,16 @@ def load_site_table(
             if global_normalizer is not None
             else ClimateNormalizer().fit(feature_frame.to_numpy()[train_mask])
         )
+        training_dates = rows.index[train_mask]
+        training_dates_by_site[str(site)] = {
+            "row_count": int(train_mask.sum()),
+            "start": training_dates.min().strftime("%Y-%m"),
+            "end": training_dates.max().strftime("%Y-%m"),
+        }
         normalized = normalizer.transform(feature_frame.to_numpy())
         if not np.isfinite(normalized).all():
             raise ValueError(f"Non-finite normalized features remain for site {site}")
-        normalizers[str(site)] = normalizer.to_dict()
+        normalizers[str(site)] = normalizer.to_dict(features)
         targets = rows[TARGETS].to_numpy(dtype=float)
         dates = rows.index
         spec = site_specs.get(str(site), {})
@@ -232,6 +265,8 @@ def load_site_table(
             if split_parts[0] is None or not np.all(split_parts == split_parts[0]):
                 continue
             split = str(split_parts[0])
+            if split not in requested_splits:
+                continue
             if holdout_regions and (
                 (region in holdout_regions and split != "test")
                 or (region not in holdout_regions and split == "test")
@@ -318,10 +353,58 @@ def load_site_table(
     }
     if metadata_path:
         Path(metadata_path).parent.mkdir(parents=True, exist_ok=True)
-        Path(metadata_path).write_text(
-            json.dumps({"features": features, "normalizers": normalizers, "split_summary": split_summary, "split_rule": "all_inputs_and_targets_in_one_split"}, indent=2),
-            encoding="utf-8",
+        provenance = normalizer_provenance(
+            path,
+            features,
+            training_dates_by_site,
+            seq_len,
+            forecast_steps,
+            effective_splits,
         )
+        site_metadata = saved_metadata.get("sites", {}) if "saved_metadata" in locals() else {}
+        if site_specs:
+            site_metadata.update(site_specs)
+        metadata = {
+            **provenance,
+            "features": features,
+            "normalizers": normalizers,
+            "sites": site_metadata,
+            "split_summary": split_summary,
+            "split_rule": "all_inputs_and_targets_in_one_split",
+            "normalizer_schema_version": NORMALIZER_METADATA_SCHEMA_VERSION,
+        }
+        metadata_file = Path(metadata_path)
+        if metadata_file.exists():
+            try:
+                existing = json.loads(metadata_file.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(
+                    f"Refusing to overwrite unreadable normalizer metadata: {metadata_file}"
+                ) from exc
+            if existing.get("normalizer_schema_version") != NORMALIZER_METADATA_SCHEMA_VERSION:
+                raise ValueError(
+                    f"Refusing to overwrite legacy/unverified normalizer metadata: {metadata_file}"
+                )
+            if existing.get("preprocessing_fingerprint") != provenance["preprocessing_fingerprint"]:
+                raise ValueError(
+                    f"Refusing to overwrite normalizer metadata fitted for a different dataset or feature contract: {metadata_file}"
+                )
+            for site, stats in normalizers.items():
+                previous = existing.get("normalizers", {}).get(site, {})
+                if previous.get("features") != features or not np.array_equal(
+                    np.asarray(previous.get("mean"), dtype=float),
+                    np.asarray(stats["mean"], dtype=float),
+                ) or not np.array_equal(
+                    np.asarray(previous.get("std"), dtype=float),
+                    np.asarray(stats["std"], dtype=float),
+                ):
+                    raise ValueError(
+                        f"Refusing to overwrite different normalizer statistics for site {site}: {metadata_file}"
+                    )
+        else:
+            metadata_file.write_text(
+                json.dumps(metadata, indent=2), encoding="utf-8"
+            )
     result = {}
     for name, entries in windows.items():
         x = np.asarray(entries["X"], dtype=np.float32).reshape(

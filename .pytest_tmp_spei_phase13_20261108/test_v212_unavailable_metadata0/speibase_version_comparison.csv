@@ -1,2 +1,0 @@
-status,version_old,version_new,comparison_period,reason
-blocked_reference_unavailable,SPEIbase v2.11.0,SPEIbase v2.12.0,1990-01 through 2024-12,Official documented path responded HTTP 404 for all required NetCDF files; no v2.12 values were downloaded or inferred.

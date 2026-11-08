@@ -134,7 +134,7 @@ model:
   hidden_dim_2: 32
   dropout: 0.2
   use_attention: true
-  use_variable_gate: true
+  variable_gate: false
   use_cascaded_decoder: false
   quantiles:
     - 0.1

@@ -12,7 +12,14 @@ import torch
 import yaml
 
 from data.loader import load_site_table, validate_dataset_protocol
-from data.preprocessing import ClimateNormalizer
+from data.preprocessing import (
+    DEFAULT_NORMALIZER_METADATA_PATH,
+    ClimateNormalizer,
+    replace_invalid_sentinels,
+    validate_configured_model_features,
+    validate_normalizer_metadata,
+)
+from data.protocol import DATASET_PROTOCOL_VERSION, SPLIT_BOUNDARIES
 from models.forecaster import MultiScaleForecaster
 from utils.artifacts import (
     architecture_fingerprint,
@@ -91,7 +98,16 @@ class DroughtCastPredictor:
         return preds, aux
 
 
-def _load_recent_input(input_csv: Path, site: str, features: list[str], seq_len: int, metadata_path: Path) -> tuple[np.ndarray, list[pd.Timestamp], dict]:
+def _load_recent_input(
+    input_csv: Path,
+    site: str,
+    features: list[str],
+    seq_len: int,
+    metadata_path: Path,
+    expected_dataset_sha256: str | None = None,
+    expected_forecast_steps: int | None = None,
+) -> tuple[np.ndarray, list[pd.Timestamp], dict]:
+    validate_configured_model_features(features, "inference preprocessing")
     if not input_csv.is_file():
         raise FileNotFoundError(f"Input data not found: {input_csv}")
     if not metadata_path.is_file():
@@ -99,6 +115,7 @@ def _load_recent_input(input_csv: Path, site: str, features: list[str], seq_len:
             f"Saved training normalizers not found: {metadata_path}. Rebuild the dataset and rerun training."
         )
     frame = pd.read_csv(input_csv, parse_dates=["date"])
+    frame = replace_invalid_sentinels(frame)
     required = {"date", *features}
     missing = required.difference(frame.columns)
     if missing:
@@ -128,12 +145,23 @@ def _load_recent_input(input_csv: Path, site: str, features: list[str], seq_len:
         raise ValueError(
             f"No train-only normalizer for site '{site}' in {metadata_path}"
         )
-    if saved.get("features") != features:
-        raise ValueError("Saved normalizer feature order does not match inference configuration")
-    fitted = ClimateNormalizer.from_dict(normalizer)
+    validate_normalizer_metadata(
+        saved,
+        features,
+        expected_dataset_sha256=expected_dataset_sha256,
+        expected_protocol_version=DATASET_PROTOCOL_VERSION,
+        expected_split_boundaries=SPLIT_BOUNDARIES,
+        expected_seq_len=seq_len,
+        expected_forecast_steps=expected_forecast_steps,
+    )
+    fitted = ClimateNormalizer.from_dict(normalizer, expected_features=features)
     if fitted.mean.shape != (len(features),):
         raise ValueError(f"Invalid saved normalizer for site '{site}' in {metadata_path}")
     normalized = fitted.transform(raw).astype(np.float32)
+    if normalized.shape != (seq_len, len(features)):
+        raise ValueError(
+            f"Expected normalized inputs with shape {(seq_len, len(features))}; got {normalized.shape}"
+        )
     if not np.isfinite(normalized).all():
         raise ValueError("Inference preprocessing produced non-finite model inputs")
     return normalized, dates, saved
@@ -191,9 +219,12 @@ def main():
     predictor = DroughtCastPredictor(chk_path, config_path=args.config, device=args.device)
     cfg = predictor.cfg
     features = list(cfg["data"]["features"])
+    validate_configured_model_features(features, "inference config")
     seq_len = int(cfg["data"].get("seq_len", 6))
     input_csv = Path(args.input_csv or cfg["data"]["path"])
-    metadata_path = Path(cfg["data"].get("metadata_path", "data/meta.json"))
+    metadata_path = Path(
+        cfg["data"].get("metadata_path", DEFAULT_NORMALIZER_METADATA_PATH)
+    )
 
     quantiles = list(cfg.get("model", {}).get("quantiles") or [])
     if quantiles != [0.1, 0.5, 0.9]:
@@ -224,7 +255,7 @@ def main():
         features,
         seq_len,
         cfg["data"]["forecast_steps"],
-        metadata_path,
+        None,
         [],
         cfg["data"].get("site_filter"),
         cfg["model"].get("input_extras"),
@@ -253,7 +284,13 @@ def main():
     site_inputs = {}
     for site in selected_sites:
         site_inputs[site] = _load_recent_input(
-            input_csv, site, features, seq_len, metadata_path
+            input_csv,
+            site,
+            features,
+            seq_len,
+            metadata_path,
+            expected_dataset_sha256=training_hash,
+            expected_forecast_steps=int(cfg["data"]["forecast_steps"]),
         )
     predictions, _ = predictor.predict(
         np.stack([site_inputs[site][0] for site in selected_sites])
@@ -283,13 +320,8 @@ def main():
                     "Check the validation target distribution and drought threshold."
                 )
 
-            val_risk = quantile_risk_below_threshold(
-                val_quantiles, args.drought_threshold
-            )
-            calibrators[(scale_index, lead)] = (
-                fit_isotonic_calibrator(val_risk, val_events),
-                int(valid.sum()),
-            )
+            val_risk = quantile_risk_below_threshold(val_quantiles, args.drought_threshold)
+            calibrators[(scale_index, lead)] = (fit_isotonic_calibrator(val_risk, val_events),int(valid.sum()),)
 
 
     print("DroughtCast calibrated drought-event forecast")

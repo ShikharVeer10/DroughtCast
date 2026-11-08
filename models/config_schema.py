@@ -5,7 +5,7 @@ from typing import Any
 ALLOWED_TOP = {"experiment", "sites", "data", "model", "training"}
 ALLOWED_EXPERIMENT = {"name", "seed", "primary_endpoint"}
 ALLOWED_DATA = {
-    "path", "metadata_path", "start_year", "end_year", "end_month", "target_source", "features", "seq_len",
+    "path", "metadata_path", "start_year", "end_year", "end_month", "spei_calibration_start_year", "target_source", "features", "seq_len",
     "forecast_steps", "input_dim", "site_filter", "train_split", "val_split", "test_split", "target_scales", "split_boundaries",
 }
 ALLOWED_MODEL = {
