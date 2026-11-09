@@ -1,0 +1,23 @@
+{
+  "git_commit": "e1be578ce31b5cb40b9eda0cd9c5ba855f51d8a8",
+  "config_sha256": "e403c6f0492befbb6bd20959feba86bfc3b6ead12e48a2173e8faef19a7bf7ee",
+  "config_path": "configs\\base_diagram.yaml",
+  "seeds": [],
+  "dataset_schema_version": 3,
+  "split_boundaries": {
+    "train_end": "2010-12-01",
+    "val_start": "2012-01-01",
+    "val_end": "2015-12-01",
+    "test_start": "2017-01-01",
+    "test_end": "2025-12-01"
+  },
+  "test_period": null,
+  "source_rows": 6,
+  "source_data_file": "data/P4_architecture.csv",
+  "figure_quality": {
+    "ok": true,
+    "errors": [],
+    "width_in": 7.16,
+    "dpi": 600
+  }
+}

@@ -100,6 +100,10 @@ def checkpoint_metadata_path(checkpoint_path: str | Path) -> Path:
 def load_checkpoint(checkpoint_path: str | Path, map_location: str | torch.device = "cpu") -> dict:
     """Load tensor-only checkpoint weights and merge the JSON provenance sidecar."""
     checkpoint_path = Path(checkpoint_path)
+    try:
+        torch.serialization.add_safe_globals([torch.torch_version.TorchVersion])
+    except Exception:
+        pass
     state = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
     if not isinstance(state, dict):
         raise TypeError(f"Checkpoint must contain a mapping: {checkpoint_path}")

@@ -9,6 +9,11 @@ SPLITS = {
 }
 
 SPLIT_BOUNDARIES = dict(SPLITS)
+PHASE5_1_1_SPLITS = {
+    **SPLITS,
+    "val_start": "2012-10-01",
+    "test_start": "2017-10-01",
+}
 SPEI_CALIBRATION_END = SPLITS["train_end"]
 INDEX_ALIGNMENT = {
     "forecast_issue": "month-end of input month; target starts next month",
